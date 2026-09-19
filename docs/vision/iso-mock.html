@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pathfinder Dispatch - 2.5D look mock</title>
+  <link rel="icon" href="data:," />
+  <!-- A throwaway mock for VISION.md, not part of the game.
+       It loads the real levels.js and search.js and renders a real trace
+       in isometric projection, so what you see is the actual game data
+       in the proposed look. Plain scripts only: opens over file:// too. -->
+  <style>
+    body { margin: 0; padding: 24px; background: #11141d; color: #e7ebf3;
+           font: 15px/1.5 system-ui, -apple-system, sans-serif; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    p.sub { color: #9aa4b8; margin: 0 0 20px; }
+    .row { display: flex; gap: 20px; flex-wrap: wrap; }
+    figure { margin: 0; background: #1a1f2b; border-radius: 12px; padding: 14px; }
+    figcaption { color: #9aa4b8; font-size: 13px; margin-top: 8px; max-width: 620px; }
+    canvas { display: block; background: #0d1017; border-radius: 8px; }
+    b { color: #e7ebf3; }
+  </style>
+</head>
+<body>
+  <h1>Pathfinder Dispatch - proposed 2.5D look</h1>
+  <p class="sub">Same canvas, same data, no dependencies. Tiles get height: walls are blocks, swamp is sunk, the path is a raised ribbon.</p>
+  <div class="row">
+    <figure>
+      <canvas id="c1" width="620" height="330"></canvas>
+      <figcaption><b>Level 2, A* mid-run.</b> Walls stand up as blocks, so a corridor reads as a corridor instead of a colour. The amber frontier tiles are lifted: the wavefront becomes a physical thing moving through the map.</figcaption>
+    </figure>
+    <figure>
+      <canvas id="c2" width="620" height="330"></canvas>
+      <figcaption><b>Level 3, Dijkstra finished.</b> Swamp is sunk below grass, so expensive terrain is visibly a pit the search has to climb through. Explored tiles are tinted, not repainted, so the terrain underneath stays readable. The path is a raised ribbon that survives on top of heavy shading.</figcaption>
+    </figure>
+  </div>
+
+  <script src="../../levels.js"></script>
+  <script src="../../search.js"></script>
+  <script>
+    var TW = 30, TH = 15;          // tile diamond width / height
+    var WALL_H = 13, SWAMP_SINK = 7, LIFT = 6, RIBBON_H = 12;
+
+    var C = {
+      grass: '#e9e4d6', swamp: '#7fa070', wall: '#4a5273',
+      early: '#e6efff', late: '#3a61ad', frontier: '#ffc94d',
+      path: '#ff5d73', start: '#27ae72', goal: '#e8503a'
+    };
+
+    function shade(hex, f) {
+      var r = parseInt(hex.substr(1, 2), 16), g = parseInt(hex.substr(3, 2), 16), b = parseInt(hex.substr(5, 2), 16);
+      return 'rgb(' + Math.round(r * f) + ',' + Math.round(g * f) + ',' + Math.round(b * f) + ')';
+    }
+    // Returns hex so the result can be fed straight back into mix/shade.
+    function mix(a, b, t) {
+      function p(h, i) { return parseInt(h.substr(i, 2), 16); }
+      function h2(v) { return ('0' + Math.round(v).toString(16)).slice(-2); }
+      return '#' + h2(p(a, 1) + (p(b, 1) - p(a, 1)) * t) +
+        h2(p(a, 3) + (p(b, 3) - p(a, 3)) * t) +
+        h2(p(a, 5) + (p(b, 5) - p(a, 5)) * t);
+    }
+
+    function project(ox, oy, x, y, z) {
+      return { sx: ox + (x - y) * (TW / 2), sy: oy + (x + y) * (TH / 2) - z };
+    }
+
+    // One tile: top diamond at height z, plus the two visible side faces.
+    function tile(ctx, ox, oy, x, y, z, color, depth) {
+      var t = project(ox, oy, x, y, z);
+      if (depth > 0) {
+        ctx.fillStyle = shade(color, 0.62);           // left face
+        ctx.beginPath();
+        ctx.moveTo(t.sx - TW / 2, t.sy + TH / 2);
+        ctx.lineTo(t.sx, t.sy + TH);
+        ctx.lineTo(t.sx, t.sy + TH + depth);
+        ctx.lineTo(t.sx - TW / 2, t.sy + TH / 2 + depth);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = shade(color, 0.44);           // right face
+        ctx.beginPath();
+        ctx.moveTo(t.sx + TW / 2, t.sy + TH / 2);
+        ctx.lineTo(t.sx, t.sy + TH);
+        ctx.lineTo(t.sx, t.sy + TH + depth);
+        ctx.lineTo(t.sx + TW / 2, t.sy + TH / 2 + depth);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = color;                           // top
+      ctx.beginPath();
+      ctx.moveTo(t.sx, t.sy);
+      ctx.lineTo(t.sx + TW / 2, t.sy + TH / 2);
+      ctx.lineTo(t.sx, t.sy + TH);
+      ctx.lineTo(t.sx - TW / 2, t.sy + TH / 2);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.16)'; ctx.lineWidth = 1; ctx.stroke();
+      return t;
+    }
+
+    function draw(canvas, levelIndex, strategy, atStep) {
+      var ctx = canvas.getContext('2d');
+      var grid = parseGrid(LEVELS[levelIndex].map);
+      var trace = search(grid, strategy);
+      var last = Math.min(atStep, trace.steps.length);
+
+      var order = {}, i;
+      for (i = 0; i < last; i++) { order[trace.steps[i].i] = i; }
+      var front = {};
+      if (last > 0) {
+        var fc = trace.steps[last - 1].frontierCells;
+        for (i = 0; i < fc.length; i++) { front[fc[i]] = true; }
+      }
+
+      var ox = canvas.width / 2 + (grid.h - grid.w) * (TW / 4);
+      var oy = Math.round((canvas.height - (grid.w + grid.h) * TH / 2) / 2) + 8;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Painter's order: back to front along x + y.
+      for (var d = 0; d <= grid.w + grid.h - 2; d++) {
+        for (var x = 0; x <= d; x++) {
+          var y = d - x;
+          if (x >= grid.w || y >= grid.h) { continue; }
+          var ch = grid.cells[y][x];
+          var idx = y * grid.w + x;
+
+          if (ch === '#') { tile(ctx, ox, oy, x, y, WALL_H, C.wall, WALL_H + 6); continue; }
+
+          var z = ch === '~' ? -SWAMP_SINK : 0;
+          var base = ch === '~' ? C.swamp : C.grass;
+          if (ch === 'S') { base = C.start; }
+          if (ch === 'G') { base = C.goal; }
+
+          var depth = ch === '~' ? 4 : 4 + SWAMP_SINK;
+          if (front[idx]) {
+            tile(ctx, ox, oy, x, y, z + LIFT, C.frontier, depth + LIFT);
+          } else if (order[idx] !== undefined && ch !== 'S' && ch !== 'G') {
+            // Explored is a tint over the terrain, never a repaint: on the
+            // weighted maps the terrain underneath is the whole lesson.
+            var t = last > 1 ? order[idx] / (last - 1) : 0;
+            tile(ctx, ox, oy, x, y, z, mix(base, mix(C.early, C.late, t), 0.62), depth);
+          } else {
+            tile(ctx, ox, oy, x, y, z, base, depth);
+          }
+        }
+      }
+
+      // Raised path ribbon, drawn last so it always survives the shading.
+      if (last >= trace.steps.length && trace.found) {
+        ctx.save();
+        ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        var pts = trace.path.map(function (p) {
+          return project(ox, oy, p.x, p.y, RIBBON_H);
+        });
+        ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 9;
+        stroke(ctx, pts, 0, 6);
+        ctx.strokeStyle = C.path; ctx.lineWidth = 7;
+        stroke(ctx, pts, 0, 0);
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+        stroke(ctx, pts, 0, -2);
+        ctx.restore();
+      }
+
+      label(ctx, ox, oy, grid.start, 'S');
+      label(ctx, ox, oy, grid.goal, 'G');
+    }
+
+    function stroke(ctx, pts, dx, dy) {
+      ctx.beginPath();
+      for (var p = 0; p < pts.length; p++) {
+        var sx = pts[p].sx + dx, sy = pts[p].sy + TH / 2 + dy;
+        if (p === 0) { ctx.moveTo(sx, sy); } else { ctx.lineTo(sx, sy); }
+      }
+      ctx.stroke();
+    }
+
+    function label(ctx, ox, oy, pos, text) {
+      var t = project(ox, oy, pos.x, pos.y, 22);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(text, t.sx, t.sy + TH / 2);
+    }
+
+    draw(document.getElementById('c1'), 1, 'astar', 22);
+    draw(document.getElementById('c2'), 2, 'dijkstra', 99999);
+  </script>
+</body>
+</html>
