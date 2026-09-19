@@ -1,11 +1,13 @@
-# Pathfinder Dispatch
+# Factory Heist
 
 Play it: https://tknguyen29032002.github.io/smalltoby-/
 
 A small browser game that teaches graph pathfinding by making the trade-offs visible.
-Pick BFS, DFS, Dijkstra, or A* for a map, watch it explore, and see what it cost.
+Robot thieves are loose on a rotating isometric factory floor, and your cart never walks: it rides the route a power found, and every power is a real search algorithm.
+Pick the power, aim it at a red delivery, watch it search, and pay for what it thought and where it drove.
 
 Open `index.html` in a browser. No build step, no dependencies.
+`training.html` is Pathfinder Dispatch, the original algorithm-picking trainer the heist grew out of; the sections from "Learning objective" to "Map format" describe it.
 
 ## Run locally on a Mac
 
@@ -13,6 +15,22 @@ Two ways, both work out of the box:
 
 - Double-click `index.html` in Finder. It opens over `file://` in Safari or Chrome and plays fully - the game is plain scripts, so there is no fetch of local files, no ES modules, and nothing loaded from a CDN.
 - Or serve the folder: from the repo root run `python3 -m http.server 8000` (python3 ships with macOS) and open <http://localhost:8000>.
+
+## Factory Heist
+
+Fifteen floors across five zones, each with two to four red deliveries to secure by stopping on them.
+
+- **Plot.** Pick a power (`1`-`9`, `0`, `-`, `=`, in the order they unlock) and click a cell. The search plays out on the floor; press another power mid-search to hot swap it. A plot costs 1 charge plus every expansion past the floor's free thinking allowance, and one tick. Holding more frontier than the floor's memory overheats it: the charge is spent and the cart stays put.
+- **Ride.** The cart rides the found route one cell per tick, paying each cell's terrain (plate 1, oil 5 and a tick to wade out, a power cell pays 4 back). `Esc` gets off.
+- **The route is a searchlight.** A hauler bot it lights is stunned and drops its lockbox, and a scout runs. A foreman loses a plate, unless his zone is proofed against that power, and he lets go of the delivery he holds when the last plate goes. Thieves that step onto the rest of a ride are lit too.
+- **Thieves.** Haulers shove deliveries and carry lockboxes off to their den. Scouts ram the cart for charge. Foremen drag their delivery away from you.
+- **Nudge.** `WASD` moves one cell for its terrain plus 2 charge, relative to the screen. The free-walk checkbox is a debug switch that makes nudges free and keeps no stars.
+- **Stars.** 1 for every delivery, 2 for also beating par ticks, 3 for also beating par charge. The charge meter hitting zero loses the floor.
+- **Between floors.** Gold from deliveries, stars and lockboxes buys boosts (recharge, freeze, flare, spare coupling) and one power a floor early. Every boost except recharge caps that floor at two stars.
+
+`Q`/`E` turn the floor, `F` toggles the overview, `T` waits a tick, `R` restarts, `?all` in the URL opens every floor.
+
+The rules live in one simulator, `heist.js`; the numbers live in `campaign.js`, `shop.js` and `maps.js`, and the design behind them is [docs/design/CAMPAIGN.md](docs/design/CAMPAIGN.md).
 
 ## Learning objective
 
@@ -226,22 +244,30 @@ Steps come from BFS and cost comes from Bellman-Ford, never from Dijkstra: a map
 ### Checking it
 
 ```
-node tools/verify-levels.js   # every level still scores the way it is designed to
-node tools/verify-engine.js   # the registry, the trace fields and the mechanics above
+node tools/verify-levels.js     # every training level still scores the way it is designed to
+node tools/verify-engine.js     # the registry, the trace fields and the mechanics above
+node tools/verify-maps.js       # the heist floors parse, connect and stay readable
+node tools/verify-campaign.js   # the campaign: solvable, par measured, no power sweeps a zone
+node tools/verify-heist.js      # all fifteen floors won through heist.js with the thieves on
 ```
 
 ## Structure
 
-- `index.html` - the full-window canvas plus the HUD that floats over it.
+- `index.html` - Factory Heist: the full-window canvas plus the HUD that floats over it.
+- `heist.js` - the one gameplay simulator: plots, rides, thieves, lockboxes, boosts, stars and replay. Pure logic, no DOM; it reads every number from `campaign.js`, `shop.js` and `maps.js`, and runs headless under node for the tools and tests.
+- `heist-render.js` - the isometric board: turned in 90-degree steps, sprites from `sprites.js`, the delivery beacons, the bobbing cart pointer, the route ribbon, thief tags, fog and edge arrows for anything off screen or under the HUD.
+- `heist-ui.js` - the page: input, pacing, the power bar, the verdict and the shop shelf, and the save in `localStorage`. It adds no rule of its own.
+- `maps.js` - the fifteen heist floors as ASCII, with their thinking and memory budgets.
+- `training.html` - Pathfinder Dispatch, the trainer, on `levels.js`, `render.js` and `game.js`.
 - `style.css` - styling. House rule: the map is the screen, so there is no panel layout and nothing scrolls.
 - `levels.js` - the ASCII maps plus objective and budgets per level, and `EXTRA_LEVELS` for the ones waiting on a button or a mechanic.
 - `search.js` - the engine: the strategy registry, `search()`, the resumable `createSearch`/`stepSearch`/`switchStrategy` loop, and missions. Seven of the twelve strategies are the same loop with a different frontier; the other five have their own shape behind the same trace. See the engine contract above.
 - `render.js` - isometric board renderer: terrain with height, exploration order, lifted frontier, raised path ribbon, and the camera (`fitCamera`, `drawScene`, `screenToCell`).
 - `game.js` - level state, camera input, playback via `requestAnimationFrame`, scoring, stars in `localStorage`, verdict and compare. The algorithm picker and its glossary cards are built from the strategy registry, so a strategy added in `search.js` appears in the UI with no change here.
-- `sprites.js` - the Factory Heist art kit: hand-authored isometric models drawn as flat-shaded canvas polygons, keyed by name and rotation. Not wired into the game yet; it is the art the 2.5D board is being rebuilt around.
+- `sprites.js` - the Factory Heist art kit: hand-authored isometric models drawn as flat-shaded canvas polygons, keyed by name and rotation.
 - `campaign.js`, `shop.js` - Factory Heist's campaign as data: fifteen encounters bound to `maps.js` by id, the thief roster, the zone rules, par, the economy and the shop. Each publishes one global (`Campaign`, `Shop`). The design is `docs/design/CAMPAIGN.md`, and `node tools/verify-campaign.js` proves it (solvable, par reachable, no power sweeps a zone, difficulty rising every level).
-- `tests/` - the node suite (`npm test`) and the browser walkthrough.
-- `tools/` - the verification scripts (`verify-levels.js`, `verify-engine.js`, `verify-campaign.js`), which are the design table written down and executable, plus `render-sprites.js`, which regenerates the art sheets.
+- `tests/` - the node suite (`npm test`) and the two browser walkthroughs: `tests/browser/heist-walkthrough.js` for `index.html` and `tests/browser/walkthrough.js` for `training.html`.
+- `tools/` - the verification scripts (`verify-levels.js`, `verify-engine.js`, `verify-maps.js`, `verify-campaign.js`, `verify-heist.js`), which are the design table written down and executable, plus `render-sprites.js`, which regenerates the art sheets.
 
 ## Art
 

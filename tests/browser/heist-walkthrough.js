@@ -7,7 +7,7 @@
  * floor gate, the turn and the picking under every rotation.
  *
  * Run it after touching index.html, heist-ui.js or heist-render.js, over both
- * origins, from a fresh profile (it clears the saved stars):
+ * origins, from a fresh profile (it clears the save):
  *
  *   python3 -m http.server 8777 &
  *   export CHROME_DEVTOOLS_AXI_SESSION=smalltoby-qa

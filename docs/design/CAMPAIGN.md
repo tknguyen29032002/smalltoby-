@@ -94,6 +94,27 @@ The hauler bot steals lockboxes and shoves deliveries a cell when it bumps them,
 The scout is the pressure: fast, hunting the cart, scared of light.
 The foreman is the fight: it holds one delivery from the start (`prizeBehaviour.heldByBoss`) and releases it only when it dies.
 
+## On the floor
+
+The table above is the contract; `heist.js` is how it plays.
+These are the rules it adds, each one there because without it a perfect line could not be ridden with the thieves on.
+
+- **Where they start.** Foremen start on the delivery they hold. Everyone else takes the map's extra `S` cells (their dens), then its `$` lockbox pads, then the floor cell farthest from the cart, the deliveries and every thief already placed, so no corner turns into a nest. It is all deterministic, so a replay starts the same.
+- **The route is a searchlight.** Every thief standing on a found route is lit when the plot lands. A foreman still standing blocks the ride at his cell, so the cart stops short of him instead of driving through.
+- **The ride stays lit.** A hauler or scout that steps onto what is left of the route being ridden is lit exactly as if the plot had found it there. Foremen are fought with plots, not ribbons.
+- **A lit foreman staggers.** Losing a plate costs him his next drag, so a second plot can reach him before he is gone.
+- **A ram is one hit, not a grind.** A thief that bumps the cart drains its charge, then backs off for as long as the light would have sent it running, and a scout does not hunt again until it has crossed its own hunting range.
+- **Blocked rides end.** A thief standing on the next cell of the route ends the ride, since the cart does not wait on a robot that may never move. A stunned or fleeing thief is rolled past.
+- **Hauler shoves.** Walking into a free delivery pushes it one cell, so the red point the player aimed at moves. The player has to get off and plot again.
+
+`node tools/verify-heist.js` is the proof that the priced rules and these rules agree.
+It plays all fifteen encounters through `heist.js` with every thief on the floor, using a reference player that follows the perfect line.
+When the line's power cannot reach from where the cart now stands, the player plots with the cheapest power that works.
+It gets off when a delivery is shoved away, and it does nothing a player could not do.
+It fails when an encounter is not won that way on its start charge, when a log does not replay to the same run, or when a still-floor plot costs anything other than what `verify-campaign.js` charged for it.
+Today every floor is won, mostly at two or three stars; level 12, the drop shaft, is the tightest, won at one star with 83 of its 83 charge spent.
+`tests/browser/heist-walkthrough.js` plays the same reference player through the page and must print the same numbers.
+
 ## The unlock ladder
 
 Each power arrives on the map whose trap it answers.
@@ -139,7 +160,7 @@ startCharge = par charge x margin by tier (2.0, 1.8, 1.6, 1.5, 1.4)
 ```
 
 The measurement is on the still floor: the verifier runs the engine, not the thieves.
-The 15% is the room left for the floor moving.
+The 15% is the room left for the floor moving, and `tools/verify-heist.js` checks it is enough (see "On the floor" above).
 `node tools/verify-campaign.js --write` rewrites par and startCharge; a plain run fails when the file has drifted from the measurement.
 
 The verifier also prints, per level, which single powers can make three stars alone.
