@@ -22,6 +22,9 @@ The engine has one loop, not two: `search()` is `runSearch(createSearch(...))`, 
 Strategies with their own shape are marked `hotSwappable: false` in the registry.
 When touching the loop, prove the original four strategies are untouched by diffing their traces against the previous `search.js` - the shipped levels are tuned to the exact expansion order.
 
+Factory Heist's campaign is data: `campaign.js` and `shop.js` hold encounters, economy and shop, bind to `maps.js` by map id, and never simulate - `heist.js` is the one gameplay simulator.
+Par is measured, not guessed: after touching `campaign.js`, `shop.js` or `maps.js`, run `node tools/verify-campaign.js` (`--write` re-measures par and start charge); the design it enforces is `docs/design/CAMPAIGN.md`.
+
 `npm test` cannot see the page. After touching `index.html`, `game.js`, or `render.js`, also run the browser walkthrough in `tests/browser/walkthrough.js` - its header has the commands - over both `file://` and `http://`; the two runs must report the same digest and no problems.
 
 The art has one author: `sprites.js` defines every sprite as a small 3D model, and the SVG sheets under `docs/art/sprites/` are generated from it by `node tools/render-sprites.js` - never hand-edited. The rules are in `docs/art/ART.md`, whose roster table is held as data by `tests/sprites.test.js` (alongside palette closure and the rotation claims), so a sprite edit ships with a regenerated sheet and an updated row. Judge any art change by eye in `docs/art/concept.html`, which draws the whole kit from the shipped `sprites.js`.
