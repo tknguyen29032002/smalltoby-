@@ -218,7 +218,7 @@ var Campaign = (function () {
       shopUnlocks: ['extra-swap'],
       teaches: 'One dial runs from the meter to the snap. The gantry\'s spills decide how much wrong you can afford.',
       perfectLine: {
-        note: 'Dart, snap the foreman, and dial the last long hop: weight 2 plots for a fraction and still walks round the oil.',
+        note: 'Dart, snap the foreman, and dial the last long hop: weight 1.5 plots for a fraction and still walks round the oil.',
         legs: [{ power: 'astar', to: 1 }, { power: 'greedy', to: 2, hits: 3 }, { power: 'wastar', to: 0 }]
       },
       par: { ticks: 95, charge: 128 }, startCharge: 231
