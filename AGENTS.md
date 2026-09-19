@@ -8,11 +8,11 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 Plain HTML/CSS/JS game, no build step and no dependencies: `index.html` must keep working when opened straight from disk over `file://`, so no `fetch()` of local files, no ES modules, and nothing from a CDN. See the README for the file-by-file map and the two local run paths.
 
-The levels only teach if each one's intended algorithm is the one that earns three stars.
-Budgets in `levels.js` are tuned to that, and the tuning is checkable: `npm test` runs the node suite in `tests/` (search invariants plus the level contract, which holds README's level table as data), and `node tools/verify-levels.js` prints the same table for a human.
-Run both after touching `levels.js`, `search.js`, or the scoring in `game.js`; a new level ships with its README row and its row in `tests/levels.test.js`.
+A level only teaches if its intended algorithm is the one that earns three stars. Budgets in `levels.js` are tuned to that, and the tuning is checkable: run `node tools/verify-levels.js` after touching `levels.js`, `search.js`, or the scoring in `game.js`. It exits non-zero when a level stops matching the design table.
 
-`npm test` cannot see the page. After touching `index.html`, `game.js`, or `render.js`, also run the browser walkthrough in `tests/browser/walkthrough.js` - its header has the commands - over both `file://` and `http://`; the two runs must report the same digest and no problems.
+`node tools/verify-engine.js` is the companion check for the engine itself - registry fields, trace fields, and every mechanic (teleports, refund chutes, fog, hot swap, legs, dispatch). Run both after any change to `search.js`. README.md's "Engine contract" section is what they enforce; change the contract and the docs in the same commit.
+
+The engine has one loop, not two: `search()` is `runSearch(createSearch(...))`, and hot swap works only because every priority/queue/stack strategy shares that state. Strategies with their own shape are marked `hotSwappable: false` in the registry. When touching the loop, prove the original four strategies are untouched by diffing their traces against the previous `search.js` - the shipped levels are tuned to the exact expansion order.
 
 ## Maintaining this file
 
