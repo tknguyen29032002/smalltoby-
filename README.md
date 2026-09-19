@@ -5,6 +5,13 @@ Pick BFS, DFS, Dijkstra, or A* for a map, watch it explore, and see what it cost
 
 Open `index.html` in a browser. No build step, no dependencies.
 
+## Run locally on a Mac
+
+Two ways, both work out of the box:
+
+- Double-click `index.html` in Finder. It opens over `file://` in Safari or Chrome and plays fully - the game is plain scripts, so there is no fetch of local files, no ES modules, and nothing loaded from a CDN.
+- Or serve the folder: from the repo root run `python3 -m http.server 8000` (python3 ships with macOS) and open <http://localhost:8000>.
+
 ## Learning objective
 
 Each algorithm trades something away.
@@ -42,7 +49,9 @@ Budget is `expansions` (nodes taken off the frontier) or `frontier` (peak fronti
 2. Walls, unweighted, `shortest`. DFS returns a long path and fails. BFS and A* pass; A* with fewer expansions.
 3. Swamp terrain, `cheapest`, generous expansion budget. BFS wades through swamp and fails. Dijkstra and A* pass.
 4. Large weighted map, far goal, tight expansion budget. Dijkstra runs out of fuel. A* fits.
-5. Huge open area, `any`, tight frontier budget. BFS's frontier balloons. DFS stays small and reaches the goal.
+5. One spine with nine corridors hanging off it, `any`, tight frontier budget. BFS holds every corridor open at once and its frontier balloons. DFS walks one corridor at a time, stays small, and reaches the goal.
+
+(Level 5 is a comb rather than an empty hall: on a fully open grid a stack-based DFS actually holds *more* cells than BFS, so the level has to branch for the memory lesson to be true.)
 
 Planned extensions: a Greedy best-first button (heuristic only, the foil for A*), a level where the heuristic lies (teleporter or wrap-around edge, so A* returns a non-optimal path), Weighted A* as a slider, and bidirectional BFS.
 

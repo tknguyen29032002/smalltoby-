@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pathfinder Dispatch</title>
+  <!-- inline favicon: keeps file:// and localhost consoles free of a 404 -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2311141d'/%3E%3Crect x='2' y='2' width='4' height='4' fill='%2327ae72'/%3E%3Crect x='10' y='10' width='4' height='4' fill='%23e8503a'/%3E%3Cpath d='M4 4 L12 4 L12 12' stroke='%23ff5d73' stroke-width='2' fill='none'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -37,12 +39,13 @@
       <p id="objective"></p>
 
       <h2>Budgets</h2>
+      <p class="hint">Expansions are cells the search has taken off the frontier. The frontier is what it is still holding.</p>
       <div class="budget">
-        <label>Expansions <span id="exp-count">0</span> / <span id="exp-limit">-</span></label>
+        <label><span>Expansions</span><span class="val"><b id="exp-count">0</b> / <span id="exp-limit">-</span></span></label>
         <div class="bar"><div id="exp-bar" class="fill"></div></div>
       </div>
       <div class="budget">
-        <label>Frontier peak <span id="front-count">0</span> / <span id="front-limit">-</span></label>
+        <label><span>Frontier peak</span><span class="val"><b id="front-count">0</b> / <span id="front-limit">-</span></span></label>
         <div class="bar"><div id="front-bar" class="fill"></div></div>
       </div>
 
@@ -66,16 +69,16 @@
         <p id="verdict-why" class="why"></p>
       </div>
 
-      <div id="compare" class="compare hidden">
-        <h2>How the others would have done</h2>
-        <div id="compare-grid" class="compare-grid"></div>
-      </div>
-
       <div class="nav">
         <button id="btn-retry" disabled>Retry</button>
         <button id="btn-next" disabled>Next level</button>
       </div>
     </aside>
+
+    <section id="compare" class="compare hidden">
+      <h2>How the others would have done</h2>
+      <div id="compare-grid" class="compare-grid"></div>
+    </section>
   </main>
 
   <script src="levels.js"></script>
