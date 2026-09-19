@@ -9,77 +9,65 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header>
-    <h1>Pathfinder Dispatch</h1>
-    <p class="tagline">Pick the right search algorithm. Watch it work. See what it cost.</p>
-  </header>
+  <!-- The map is the screen. Everything else floats over it. -->
+  <canvas id="map" role="img" aria-label="Isometric map of the level. The mission, budgets and result are given as text around it."></canvas>
 
-  <main>
-    <section class="board">
-      <div class="level-header">
-        <span id="level-title">Level 1</span>
-        <span id="level-progress"></span>
-      </div>
-      <p id="level-brief" class="brief"></p>
-
-      <canvas id="map" width="600" height="600"></canvas>
-
-      <div class="legend">
-        <span><i class="sw grass"></i> grass (cost 1)</span>
-        <span><i class="sw swamp"></i> swamp (cost 5)</span>
-        <span><i class="sw wall"></i> wall</span>
-        <span><i class="sw visited"></i> explored</span>
-        <span><i class="sw frontier"></i> frontier</span>
-        <span><i class="sw path"></i> path</span>
-      </div>
-    </section>
-
-    <aside class="panel">
-      <h2>Objective</h2>
-      <p id="objective"></p>
-
-      <h2>Budgets</h2>
-      <p class="hint">Expansions are cells the search has taken off the frontier. The frontier is what it is still holding.</p>
-      <div class="budget">
-        <label><span>Expansions</span><span class="val"><b id="exp-count">0</b> / <span id="exp-limit">-</span></span></label>
-        <div class="bar"><div id="exp-bar" class="fill"></div></div>
-      </div>
-      <div class="budget">
-        <label><span>Frontier peak</span><span class="val"><b id="front-count">0</b> / <span id="front-limit">-</span></span></label>
-        <div class="bar"><div id="front-bar" class="fill"></div></div>
+  <div class="hud">
+    <div class="hud-top">
+      <div class="mission">
+        <div class="mission-line">
+          <span id="level-progress" class="chapter"></span>
+          <h1 id="level-title"></h1>
+          <span id="star-total" class="star-total"></span>
+        </div>
+        <p id="objective" class="objective"></p>
+        <p id="level-brief" class="brief"></p>
       </div>
 
-      <h2>Choose an algorithm</h2>
-      <div class="algos">
-        <button class="algo" data-algo="bfs">BFS<small>queue</small></button>
-        <button class="algo" data-algo="dfs">DFS<small>stack</small></button>
-        <button class="algo" data-algo="dijkstra">Dijkstra<small>by cost</small></button>
-        <button class="algo" data-algo="astar">A*<small>cost + guess</small></button>
+      <div class="readouts">
+        <div id="budgets" class="budgets"></div>
+        <div id="legend" class="legend"></div>
       </div>
+    </div>
 
-      <div class="controls">
+    <div class="hud-bottom">
+      <div id="algos" class="algos"></div>
+      <div class="transport">
+        <button id="btn-play" class="primary" disabled>Play</button>
         <button id="btn-step" disabled>Step</button>
-        <button id="btn-play" disabled>Play</button>
-        <label>Speed <input id="speed" type="range" min="1" max="30" value="8" /></label>
-      </div>
-
-      <div id="verdict" class="verdict hidden">
-        <div id="stars" class="stars"></div>
-        <p id="verdict-text"></p>
-        <p id="verdict-why" class="why"></p>
-      </div>
-
-      <div class="nav">
+        <label class="speed">Speed<input id="speed" type="range" min="1" max="30" value="4" /></label>
+        <label id="weight-box" class="speed hidden">Weight <b id="weight-val">1.0</b><input id="weight" type="range" min="10" max="50" value="10" /></label>
         <button id="btn-retry" disabled>Retry</button>
-        <button id="btn-next" disabled>Next level</button>
+        <span class="keyhint">space play &middot; &rarr; step &middot; drag pan &middot; scroll zoom &middot; F fit</span>
       </div>
-    </aside>
+      <div id="levelbar" class="levelbar"></div>
+    </div>
+  </div>
 
-    <section id="compare" class="compare hidden">
-      <h2>How the others would have done</h2>
-      <div id="compare-grid" class="compare-grid"></div>
-    </section>
-  </main>
+  <!-- Glossary card for the algorithm under the pointer, built from the registry. -->
+  <div id="glossary" class="glossary hidden" role="tooltip"></div>
+
+  <!-- Verdict and compare, over the map, dismissed with a click. -->
+  <div id="overlay" class="overlay hidden">
+    <div class="sheet">
+      <button id="overlay-close" class="close" aria-label="Dismiss">&times;</button>
+      <div class="verdict" role="status" aria-live="polite">
+        <div id="stars" class="stars"></div>
+        <h2 id="verdict-text"></h2>
+        <p id="verdict-why" class="why"></p>
+        <p class="concept-line"><span id="concept-chip" class="chip"></span><span id="concept-note"></span></p>
+      </div>
+      <div class="compare">
+        <h3>What the others would have done</h3>
+        <div id="compare-grid" class="compare-grid"></div>
+      </div>
+      <div class="sheet-nav">
+        <span id="gate-note" class="gate-note"></span>
+        <button id="btn-retry-2">Retry this level</button>
+        <button id="btn-next" class="primary">Next level</button>
+      </div>
+    </div>
+  </div>
 
   <script src="levels.js"></script>
   <script src="search.js"></script>
