@@ -86,7 +86,11 @@ var HeistBoard = (function () {
       spin: null,
       cache: {},
       cacheKeyScale: 0,
-      time: 0
+      time: 0,
+      // Screen bands the page's HUD covers; the edge arrows treat them as
+      // off screen, since a delivery under the power bar is as lost as one
+      // past the edge.
+      covered: { top: 0, bottom: 0 }
     };
     board.fit = function (state, w, h, insets, overview) { return fit(board, state, w, h, insets, overview); };
     board.turn = function (dir) { return turn(board, dir); };
@@ -412,6 +416,8 @@ var HeistBoard = (function () {
       if (c) { c.chest = ch; }
     });
     state.deliveries.forEach(function (d) {
+      // An unlogged delivery is not on the board until the cart has seen it.
+      if (!d.known) { return; }
       var c = byIndex[d.y * grid.w + d.x];
       if (c) { c.delivery = d; }
     });
@@ -487,7 +493,7 @@ var HeistBoard = (function () {
 
   function drawBot(board, sx, sy, rot, bot, scale) {
     var ctx = board.ctx;
-    if (bot.stunned > 0) { ctx.globalAlpha = 0.55; }
+    if (bot.stunned > 0 || bot.fleeing > 0) { ctx.globalAlpha = 0.55; }
     blit(board, bot.sprite, Sprites.face(rot, bot.facing), sx, sy);
     ctx.globalAlpha = 1;
     if (bot.carrying) {
@@ -513,8 +519,9 @@ var HeistBoard = (function () {
     var bob = Math.sin(board.time * 3.2) * 3 * scale;
 
     state.deliveries.forEach(function (d) {
-      if (d.secured) { return; }
-      if (!Heist.visible(state, d.x, d.y)) { return; }
+      // A dark floor hides the way, not the manifest: a logged delivery keeps
+      // its beacon in the dark. Only a delivery nobody logged waits to be seen.
+      if (d.secured || !d.known) { return; }
       var p = screenOf(board, state.grid, d.x, d.y, 0);
       beacon(ctx, p.x, p.y + TILE_H / 2 * scale, scale, INK.delivery, board.time);
       edgeArrow(board, p.x, p.y + TILE_H / 2 * scale, INK.delivery);
@@ -523,7 +530,7 @@ var HeistBoard = (function () {
     Heist.liveBots(state).forEach(function (b) {
       if (!Heist.visible(state, b.x, b.y)) { return; }
       var p = screenOf(board, state.grid, b.x, b.y, 0);
-      botTag(ctx, p.x, p.y - (18 + (b.maxHp > 1 ? 10 : 0)) * scale + bob * 0.3, scale, b);
+      botTag(ctx, p.x, p.y - (18 + (b.type === 'boss' ? 10 : 0)) * scale + bob * 0.3, scale, b);
     });
 
     var pp = screenOf(board, state.grid, state.player.x, state.player.y, 0);
@@ -540,15 +547,18 @@ var HeistBoard = (function () {
   }
 
   // The floor is bigger than the screen at play zoom, so anything the player
-  // must find that has scrolled off gets an arrow on the edge pointing at it.
+  // must find that has scrolled off, or sits under the HUD, gets an arrow on
+  // the edge of the open board pointing at it.
   function edgeArrow(board, x, y, colour) {
     var dpr = board.canvas._dpr || 1;
     var w = board.canvas.width / dpr;
     var h = board.canvas.height / dpr;
     var m = 26;
-    if (x >= m && x <= w - m && y >= m && y <= h - m) { return; }
+    var top = board.covered.top + m;
+    var bottom = h - board.covered.bottom - m;
+    if (x >= m && x <= w - m && y >= top && y <= bottom) { return; }
     var cx = Math.max(m, Math.min(w - m, x));
-    var cy = Math.max(m, Math.min(h - m, y));
+    var cy = Math.max(top, Math.min(bottom, y));
     var ang = Math.atan2(y - cy, x - cx);
     var ctx = board.ctx;
     ctx.save();
@@ -616,15 +626,24 @@ var HeistBoard = (function () {
     ctx.beginPath();
     ctx.arc(x, y, r + 2.2 * scale, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = bot.stunned > 0 ? '#8b98a8' : INK.thief;
+    // Grey when the light has it (stunned or running): it can be rolled past.
+    // A scout is a dart, a hauler a diamond, a foreman a diamond with plates.
+    ctx.fillStyle = bot.stunned > 0 || bot.fleeing > 0 ? '#8b98a8' : INK.thief;
     ctx.beginPath();
-    ctx.moveTo(x, y - r);
-    ctx.lineTo(x + r, y);
-    ctx.lineTo(x, y + r);
-    ctx.lineTo(x - r, y);
+    if (bot.type === 'fast') {
+      ctx.moveTo(x, y - r);
+      ctx.lineTo(x + r * 0.9, y + r * 0.8);
+      ctx.lineTo(x, y + r * 0.35);
+      ctx.lineTo(x - r * 0.9, y + r * 0.8);
+    } else {
+      ctx.moveTo(x, y - r);
+      ctx.lineTo(x + r, y);
+      ctx.lineTo(x, y + r);
+      ctx.lineTo(x - r, y);
+    }
     ctx.closePath();
     ctx.fill();
-    if (bot.maxHp > 1) {
+    if (bot.type === 'boss') {
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold ' + Math.round(8 * scale) + 'px system-ui, sans-serif';
       ctx.textAlign = 'center';

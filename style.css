@@ -600,3 +600,35 @@ button.primary {
 .powers .algo.locked { padding: 4px 8px; align-self: center; font-size: var(--fs-caption); font-weight: 500; background: rgba(20, 25, 36, 0.85); }
 .powers .algo.locked em { font-style: normal; color: var(--warn); font-size: 10px; }
 .heist .hud-bottom { background: linear-gradient(to top, rgba(9,11,17,0.97) 55%, rgba(9,11,17,0)); }
+
+/* boosts carried into this floor, and the shelf between floors */
+.boosts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; pointer-events: auto; }
+.boost { padding: 4px 10px; font-size: var(--fs-caption); border-color: rgba(255, 201, 77, 0.45); }
+.boost b { color: var(--warn); }
+.boost small { color: var(--ink-dim); font-size: 10px; }
+.warnv { color: var(--warn); }
+
+.shop { grid-column: 1 / -1; }
+.shop:empty { display: none; }
+.shop h3 {
+  margin: 0 0 8px;
+  font-size: var(--fs-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  font-weight: 620;
+}
+.shop .gold { margin-left: 8px; color: var(--warn); letter-spacing: 0; text-transform: none; }
+.shelf { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.ware {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+.ware-head { font-size: var(--fs-caption); font-weight: 650; }
+.ware-head small { color: var(--ink-dim); font-weight: 500; }
+.ware p { margin: 0; flex: 1; font-size: var(--fs-caption); color: var(--ink-dim); line-height: 1.4; }
+.ware button { align-self: flex-start; font-size: var(--fs-caption); padding: 4px 10px; }

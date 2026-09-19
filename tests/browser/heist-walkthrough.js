@@ -3,8 +3,8 @@
  * `npm test` proves heist.js and the campaign; it cannot see index.html. This
  * script plays all fifteen floors through the page's own entry points - the
  * same fireAt/pressPower the canvas click and the power keys call - and checks
- * what the player would see: the power bar, the verdict sheet, the floor gate,
- * the turn and the picking under every rotation.
+ * what the player would see: the power bar, the verdict sheet, the shop, the
+ * floor gate, the turn and the picking under every rotation.
  *
  * Run it after touching index.html, heist-ui.js or heist-render.js, over both
  * origins, from a fresh profile (it clears the saved stars):
@@ -17,9 +17,10 @@
  *   npx -y chrome-devtools-axi eval "$(cat tests/browser/heist-walkthrough.js)"
  *
  * `problems` must be empty and the two runs must report the same `digest`.
- * The player is the same yardstick as tools/verify-heist.js - cheapest
- * unlocked power that reaches the nearest delivery - so every floor should
- * be won, and the per-floor rows are left on window.__qaHeist.
+ * The player is tools/verify-heist.js's reference player - the encounter's
+ * perfect line, the cheapest working power when the line's own fails from
+ * where the cart stands - so every floor is won, and on the same numbers
+ * verify-heist prints. The per-floor rows are left on window.__qaHeist.
  */
 
 (async () => {
@@ -32,10 +33,13 @@
     for (let g = 0; g < 2000 && (H.ui.phase === 'search' || H.ui.phase === 'ride'); g++) { await sleep(16); }
   };
 
-  try { localStorage.removeItem('factoryHeist.stars.v1'); } catch (e) { /* storage off: fine */ }
-  H.ui.earned = {};
-  H.ui.rideMs = 1;
+  try { localStorage.removeItem('factoryHeist.save.v2'); } catch (e) { /* storage off: fine */ }
+  H.ui.save = { stars: {}, gold: 0, bank: {}, earlyUnlocked: [] };
+  // The ride clock is stopped and the walkthrough ticks it itself, one tick
+  // at a time as verify-heist does, so the run cannot depend on frame timing.
+  H.ui.rideMs = 1e9;
   $('speed').value = 30;
+  $('freewalk').checked = false;
 
   // --- the picture: rotation and picking agree in all four turns ----------
   H.loadFloor(0);
@@ -55,67 +59,100 @@
     if (bad) { problems.push('rotation ' + H.board.rot + ': ' + bad + ' cells pick the wrong tile'); }
   }
 
-  // --- the cheapest unlocked power that reaches a target -----------------
-  const unlocked = () => [...document.querySelectorAll('.power:not(.locked)')].map(b => b.dataset.power);
-  const probe = (st, id, target) => {
-    const h = Heist.openFire({ level: st.level, grid: st.grid, player: st.player, status: 'playing' }, id, target);
+  // --- verify-heist's reference player, driven through the page -----------
+  const probe = (st, id, aim) => {
+    const h = Heist.openFire(st, id, aim);
+    if (h.refused) { return null; }
     while (!h.done) { Heist.stepFire(h); }
-    const t = PathfinderEngine.traceOf(h.search);
-    const cost = t.chargedExpansions === undefined ? t.expansions : t.chargedExpansions;
-    return t.found ? { id, cost, steps: t.pathSteps, reach: h.power.reach } : null;
+    const t = Heist.traceOf(h);
+    if (!t.found || (st.memory !== null && t.peakFrontier > st.memory)) { return null; }
+    return Campaign.plotCharge(t, st.map) + t.path.slice(1).reduce((n, p) => n + PathfinderEngine.cellCost(st.grid, p.x, p.y), 0);
   };
-  const best = (st, target) => unlocked().map(id => probe(st, id, target)).filter(Boolean)
-    .sort((a, b) => (a.cost + a.steps * 6) - (b.cost + b.steps * 6))[0];
+  const cheapest = (st, aim) => {
+    let best = null;
+    let cost = Infinity;
+    st.powers.forEach(id => { const c = probe(st, id, aim); if (c !== null && c < cost) { best = id; cost = c; } });
+    return best;
+  };
+  const tickOnce = async () => { H.wait(); await sleep(0); };
 
-  for (let i = 0; i < HEIST_LEVELS.length; i++) {
+  for (let i = 0; i < Campaign.ENCOUNTERS.length; i++) {
+    const enc = Campaign.ENCOUNTERS[i];
     if (i > 0) {
       if ($('btn-next').disabled) { problems.push('floor ' + i + ': Next floor gated after a win'); }
       $('btn-next').click();
     }
-    const at = 'floor ' + (i + 1) + ': ';
+    const at = 'floor ' + enc.level + ': ';
     if (H.ui.index !== i) { problems.push(at + 'did not load'); continue; }
 
-    // Power bar: every unlocked power by name and registry label, never an id.
-    const open = unlocked();
-    const want = HEIST_UNLOCKS.slice(0, i + 1).filter(Boolean);
+    // Power bar: exactly the ladder's powers so far, by name and registry
+    // label, never an id.
+    const open = [...document.querySelectorAll('.power:not(.locked)')].map(b => b.dataset.power);
+    const want = Campaign.powersAt(enc.level);
     if (open.join() !== want.join()) { problems.push(at + 'power bar shows ' + open + ', expected ' + want); }
     for (const b of document.querySelectorAll('.power')) {
-      if (/\b(wastar|bibfs|iddfs|bellman|flow|wall)\b/.test(b.textContent)) {
-        problems.push(at + 'a power button shows a raw id: ' + b.textContent);
+      const label = PathfinderEngine.STRATEGY_BY_ID[b.dataset.power].label;
+      if (b.textContent.indexOf(label) === -1 || /\b(wastar|bibfs|iddfs|bellman|flow|wall|bfs|dfs|astar)\b/.test(b.textContent)) {
+        problems.push(at + 'a power button does not show its registry label: ' + b.textContent);
       }
     }
 
-    let guard = 0;
-    while (H.ui.state.status === 'playing' && guard++ < 80) {
-      const st = H.ui.state;
-      const openD = Heist.openDeliveries(st);
-      const target = openD.reduce((a, b) =>
-        (Math.abs(b.x - st.player.x) + Math.abs(b.y - st.player.y)) <
-        (Math.abs(a.x - st.player.x) + Math.abs(a.y - st.player.y)) ? b : a);
-      const sitting = Heist.botAt(st, target.x, target.y);
-      const aim = sitting ? { x: sitting.x, y: sitting.y, botId: sitting.id } : { x: target.x, y: target.y };
-      const pick = best(st, aim);
-      if (!pick) { H.wait(); continue; }
-      H.pressPower(pick.id);
-      H.fireAt({ x: aim.x, y: aim.y });
-      await idle();
+    const st = H.ui.state;
+    for (let n = 0; n < enc.perfectLine.legs.length && st.status === 'playing'; n++) {
+      const leg = enc.perfectLine.legs[n];
+      const d = st.deliveries[leg.to];
+      let guard = 0;
+      while (!d.secured && st.status === 'playing' && guard++ < 80) {
+        const aim = { x: d.x, y: d.y };
+        const power = probe(st, leg.power, aim) !== null ? leg.power : cheapest(st, aim);
+        if (!power) { await tickOnce(); continue; }
+        H.pressPower(power);
+        H.fireAt(aim);
+        if (H.ui.phase === 'search') {
+          // Space: finish the search at once, as a player would.
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+        }
+        let rideGuard = 0;
+        while (H.ui.phase === 'ride' && st.status === 'playing' && rideGuard++ < 300) {
+          const end = st.ride.path[st.ride.path.length - 1];
+          if (end.x !== d.x || end.y !== d.y) {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+            break;
+          }
+          H.rideTick();
+          if (rideGuard % 8 === 0) { await sleep(0); }
+        }
+        while (st.stall > 0 && st.status === 'playing') { await tickOnce(); }
+      }
     }
     await sleep(600);
 
-    const st = H.ui.state;
     const sum = Heist.summary(st);
-    rows.push({ floor: i + 1, status: sum.status, ticks: sum.ticks, spent: sum.spent, stars: sum.stars, shots: sum.shots });
-    if (sum.status !== 'won') { problems.push(at + 'the yardstick player did not win (' + sum.status + ')'); }
+    rows.push({ floor: enc.level, map: enc.mapId, status: sum.status, ticks: sum.ticks, spent: sum.spent, stars: sum.stars, gold: sum.gold });
+    if (sum.status !== 'won') { problems.push(at + 'the reference player did not win (' + sum.status + ': ' + st.reason + ')'); }
     if ($('overlay').classList.contains('hidden')) { problems.push(at + 'no verdict sheet'); }
-    if (!$('concept-chip').textContent.trim()) { problems.push(at + 'the verdict names no concept'); }
+    if ($('concept-note').textContent !== enc.teaches) { problems.push(at + 'the verdict does not print what the floor teaches'); }
     if ($('stars').textContent.replace(/☆/g, '').length !== sum.stars) {
       problems.push(at + 'verdict shows ' + $('stars').textContent + ' for ' + sum.stars + ' stars');
     }
+    const shelf = Shop.shelf(i + 1 < Campaign.ENCOUNTERS.length ? enc.level + 1 : 1, H.ui.save);
+    const wares = document.querySelectorAll('#shop .ware').length;
+    if (wares !== shelf.boosts.length + (shelf.power ? 1 : 0)) { problems.push(at + 'the shop shows ' + wares + ' wares, the shelf has more or fewer'); }
   }
+
+  // --- the shop: buying a boost banks it, and it rides into the next floor ---
+  H.ui.save.gold = 100;
+  H.loadFloor(1);
+  H.buy('boost', 'recharge', 15);
+  H.loadFloor(2);
+  if (H.ui.state.boosts.recharge !== 1) { problems.push('a bought recharge did not ride into the next floor'); }
+  if (!document.querySelector('#boosts [data-boost="recharge"]')) { problems.push('no button for the carried recharge'); }
+  document.querySelector('#boosts [data-boost="recharge"]').click();
+  if (H.ui.save.bank.recharge !== 0 || H.ui.state.log.slice(-1)[0][0] !== 'b') { problems.push('using a boost did not log it and spend it from the bank'); }
 
   const serialised = JSON.stringify(rows);
   let digest = 5381;
   for (let i = 0; i < serialised.length; i++) { digest = ((digest * 33) ^ serialised.charCodeAt(i)) >>> 0; }
   window.__qaHeist = { rows, problems };
-  return JSON.stringify({ origin: location.protocol, floors: rows.length, won: rows.filter(r => r.status === 'won').length, digest: digest.toString(16), problems });
+  return JSON.stringify({ origin: location.protocol, floors: rows.length, won: rows.filter(r => r.status === 'won').length, stars: rows.reduce((n, r) => n + r.stars, 0), digest: digest.toString(16), problems });
 })()
