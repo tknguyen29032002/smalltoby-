@@ -86,24 +86,15 @@ var MAPS = {
   }
 };
 
-// Two arms meet at the bottom-left corner and share one long tail to the goal.
-// The right-hand arm runs toward the goal the whole way, so greedy best-first
-// walks it first and claims the corner through it; the left-hand arm is nine
-// steps shorter but starts by moving away, so greedy never parents through it.
-// Verified against both tie-break policies: greedy 45 steps, optimal 35.
+// Two ways to the goal. The top row runs straight at it through deep swamp:
+// every step lowers the distance-to-goal, so greedy best-first takes it and
+// pays 46. The way round the bottom starts by moving away from the goal, so
+// greedy never looks at it, and it costs 12. A* with an admissible heuristic
+// still returns the cheap one, which is the whole point of the fixture.
 var GREEDY_TRAP = [
-  '.S.....########',
-  '.#####.########',
-  '.#####.########',
-  '.#####.########',
-  '.#####.#####G..',
-  '.#####.#######.',
-  '.#####.#######.',
-  '.#####.#######.',
-  '.......#######.',
-  '.#############.',
-  '.#############.',
-  '...............'
+  'S~~~~~~~~~G',
+  '.#########.',
+  '...........'
 ].join('\n');
 
 // Goal walled off entirely: nothing can reach it.

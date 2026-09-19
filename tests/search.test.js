@@ -35,9 +35,16 @@ function assertTraceInvariants(map, id, res) {
   assert.equal(trace.strategy, id, label + ': trace reports the strategy it was asked for');
   assert.ok(Array.isArray(trace.steps), label + ': steps is an array');
 
-  // expansion count equals expansions.length
-  assert.equal(trace.expansions, trace.steps.length,
-    label + ': expansions must equal the number of recorded steps');
+  // expansion count equals expansions.length. A strategy that re-walks the map
+  // may stop recording steps once the trace would get unreasonably large, and
+  // says so with truncatedSteps; the counter stays honest either way.
+  if (trace.truncatedSteps) {
+    assert.ok(trace.steps.length <= trace.expansions,
+      label + ': a truncated trace cannot record more steps than expansions');
+  } else {
+    assert.equal(trace.expansions, trace.steps.length,
+      label + ': expansions must equal the number of recorded steps');
+  }
 
   // peak frontier is the max of the per-step frontier sizes.
   // frontierSize counts raw frontier entries; frontierCells is that list
@@ -59,14 +66,24 @@ function assertTraceInvariants(map, id, res) {
   assert.equal(trace.peakFrontier, Math.max(1, maxSeen),
     label + ': peakFrontier must be the max per-step frontier size');
 
-  // no cell is expanded twice, and every expansion is a real walkable cell
+  // Every expansion is a real walkable cell, and no cell is expanded twice -
+  // unless the strategy is one that re-walks by design (iterative deepening
+  // deepens a pass at a time, Bellman-Ford relaxes until nothing improves, the
+  // wall follower has no visited set at all). Those declare `revisits: true`
+  // and are held to the weaker promise that they never expand a wall.
+  var byPass = trace.revisits === true;
   var seen = {};
   trace.steps.forEach(function (st) {
     assert.equal(st.i, st.y * grid.w + st.x, label + ': step index matches its x,y');
-    assert.ok(!seen[st.i], label + ': cell ' + st.i + ' expanded twice');
-    seen[st.i] = true;
+    if (!byPass) {
+      assert.ok(!seen[st.i], label + ': cell ' + st.i + ' expanded twice');
+      seen[st.i] = true;
+    }
     assert.notEqual(grid.cells[st.y][st.x], '#', label + ': expanded a wall');
   });
+  if (trace.steps.length > 0 && trace.steps[0].pass !== undefined) {
+    assert.ok(trace.passes >= 1, label + ': a trace with passes must say how many');
+  }
 
   if (!trace.found) {
     assert.deepEqual(trace.path, [], label + ': no path means an empty path');

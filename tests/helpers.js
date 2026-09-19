@@ -101,7 +101,9 @@ var STEP_OPTIMAL = ['bfs'].filter(has);
 
 /* ---------- reference implementations (not search.js) ---------- */
 
-var COST = { '.': 1, 'S': 1, 'G': 1, '~': 5 };
+var COST = { '.': 1, 'S': 1, 'G': 1, '~': 5, 'v': -4 };
+
+function isPad(ch) { return ch >= '0' && ch <= '9'; }
 
 function refGrid(ascii) {
   var rows = ascii.replace(/^\n+|\n+$/g, '').split('\n');
@@ -113,18 +115,44 @@ function refGrid(ascii) {
   });
   var start = null;
   var goal = null;
+  var pads = {};
   for (var y = 0; y < cells.length; y++) {
     for (var x = 0; x < w; x++) {
-      if (cells[y][x] === 'S') { start = { x: x, y: y }; }
-      if (cells[y][x] === 'G') { goal = { x: x, y: y }; }
+      var ch = cells[y][x];
+      if (ch === 'S') { start = { x: x, y: y }; }
+      if (ch === 'G') { goal = { x: x, y: y }; }
+      if (isPad(ch)) {
+        if (!pads[ch]) { pads[ch] = []; }
+        pads[ch].push([x, y]);
+      }
     }
   }
-  return { w: w, h: cells.length, cells: cells, start: start, goal: goal };
+  // Teleport pads sharing a digit are one move apart, both ways.
+  var links = {};
+  Object.keys(pads).forEach(function (glyph) {
+    pads[glyph].forEach(function (a) {
+      links[a[1] * w + a[0]] = pads[glyph].filter(function (b) {
+        return !(b[0] === a[0] && b[1] === a[1]);
+      });
+    });
+  });
+  return { w: w, h: cells.length, cells: cells, start: start, goal: goal, links: links };
 }
 
 function refCellCost(g, x, y) {
   var c = COST[g.cells[y][x]];
   return c === undefined ? 1 : c;
+}
+
+// A refund chute 'v' is entered only from directly above and left only to
+// directly below: that one-way rule is what keeps a negative tile from being
+// a two-cell loop, so the reference model has to honour it too.
+function passable(g, fx, fy, tx, ty) {
+  if (g.cells[ty][tx] === '#') { return false; }
+  var downward = tx === fx && ty === fy + 1;
+  if (g.cells[fy][fx] === 'v' && !downward) { return false; }
+  if (g.cells[ty][tx] === 'v' && !downward) { return false; }
+  return true;
 }
 
 function neighbours(g, x, y) {
@@ -134,9 +162,11 @@ function neighbours(g, x, y) {
     var nx = x + deltas[i][0];
     var ny = y + deltas[i][1];
     if (nx < 0 || ny < 0 || nx >= g.w || ny >= g.h) { continue; }
-    if (g.cells[ny][nx] === '#') { continue; }
+    if (!passable(g, x, y, nx, ny)) { continue; }
     out.push([nx, ny]);
   }
+  var linked = g.links && g.links[y * g.w + x];
+  if (linked) { linked.forEach(function (p) { out.push([p[0], p[1]]); }); }
   return out;
 }
 
@@ -161,36 +191,39 @@ function refBestSteps(ascii) {
   return Infinity;
 }
 
-// Lowest terrain cost, by hand-rolled Dijkstra (linear scan, maps are small).
+// Lowest terrain cost, by hand-rolled Bellman-Ford: relax every edge out of
+// every cell that changed in the pass before, until nothing improves. Dijkstra
+// would be simpler but it is wrong on a map with refund chutes, and that is
+// exactly a map this reference has to grade.
 function refBestCost(ascii) {
   var g = refGrid(ascii);
   var key = function (x, y) { return y * g.w + x; };
+  var size = g.w * g.h;
   var best = {};
-  var done = {};
   best[key(g.start.x, g.start.y)] = 0;
-  var open = [[g.start.x, g.start.y]];
-  while (open.length) {
-    var at = 0;
-    for (var i = 1; i < open.length; i++) {
-      if (best[key(open[i][0], open[i][1])] < best[key(open[at][0], open[at][1])]) { at = i; }
-    }
-    var cur = open.splice(at, 1)[0];
-    var ck = key(cur[0], cur[1]);
-    if (done[ck]) { continue; }
-    done[ck] = true;
-    if (cur[0] === g.goal.x && cur[1] === g.goal.y) { return best[ck]; }
-    var ns = neighbours(g, cur[0], cur[1]);
-    for (var n = 0; n < ns.length; n++) {
-      var nk = key(ns[n][0], ns[n][1]);
-      if (done[nk]) { continue; }
-      var cand = best[ck] + refCellCost(g, ns[n][0], ns[n][1]);
-      if (best[nk] === undefined || cand < best[nk]) {
-        best[nk] = cand;
-        open.push(ns[n]);
+  var current = [[g.start.x, g.start.y]];
+  var passes = 0;
+  while (current.length && passes <= size) {
+    passes++;
+    var next = [];
+    var queued = {};
+    for (var i = 0; i < current.length; i++) {
+      var cur = current[i];
+      var ck = key(cur[0], cur[1]);
+      var ns = neighbours(g, cur[0], cur[1]);
+      for (var n = 0; n < ns.length; n++) {
+        var nk = key(ns[n][0], ns[n][1]);
+        var cand = best[ck] + refCellCost(g, ns[n][0], ns[n][1]);
+        if (best[nk] === undefined || cand < best[nk]) {
+          best[nk] = cand;
+          if (!queued[nk]) { queued[nk] = true; next.push(ns[n]); }
+        }
       }
     }
+    current = next;
   }
-  return Infinity;
+  var goalKey = key(g.goal.x, g.goal.y);
+  return best[goalKey] === undefined ? Infinity : best[goalKey];
 }
 
 function reachable(ascii) {
