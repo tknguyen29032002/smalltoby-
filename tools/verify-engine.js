@@ -100,9 +100,14 @@ var sides = {};
 bi.steps.forEach(function (st) { sides[st.side] = (sides[st.side] || 0) + 1; });
 ok('every step says which side it came from', !!sides.forward && !!sides.backward,
   JSON.stringify(sides));
+// The two sides can hold the same cell at once, so frontierCells is the union,
+// never longer than the two sides added together.
 ok('every step carries both frontiers separately', bi.steps.every(function (st) {
   return Array.isArray(st.frontierForward) && Array.isArray(st.frontierBackward) &&
-    st.frontierForward.length + st.frontierBackward.length === st.frontierCells.length;
+    st.frontierCells.length <= st.frontierForward.length + st.frontierBackward.length &&
+    st.frontierForward.concat(st.frontierBackward).every(function (c) {
+      return st.frontierCells.indexOf(c) !== -1;
+    });
 }));
 ok('the merged path starts at the start and ends at the goal',
   bi.path[0].x === grid4.start.x && bi.path[0].y === grid4.start.y &&

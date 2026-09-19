@@ -117,6 +117,12 @@ The four original ids - `bfs`, `dfs`, `dijkstra`, `astar` - are stable and will 
 `strategyAvailability(level)` returns one `{ id, eligible, reason, note, blind }` per strategy for a given level, so the UI can grey out what cannot be played and warn about what will be expensive.
 `eligibleStrategies(level)` is the same thing reduced to a list of ids.
 
+### What the file exposes
+
+The page loads plain `<script>` tags, so every top-level name would otherwise be a global that another file can collide with - `game.js` has its own `runSearch`, and that collision made the engine recurse into the UI.
+`search.js` is therefore one closure that publishes exactly two things: `window.PathfinderEngine`, holding the whole API, and the three names the page already used - `search`, `parseGrid` and `STRATEGIES`.
+Under node, `require('./search.js')` returns the same API object.
+
 ### search(grid, strategy, params)
 
 `parseGrid(ascii)` turns a map into `{ w, h, cells, start, starts, goal, goals, waypoints, teleports }`.
@@ -168,7 +174,8 @@ Fields that appear only when the run earned them:
 | `field` | flow field | Cost-to-goal for every cell on the map, indexed like the grid. |
 | `steps[i].facing` | wall follower | Which way the walker is pointing, as an index into the move order. |
 | `gaveUp` | wall follower, iterative deepening, flow field | It stopped on its own cap rather than on a wall of `no path`. |
-| `truncatedSteps` | iterative deepening, Bellman-Ford | The counters are honest but step recording stopped at 20000 entries. |
+| `revisits` | iterative deepening, Bellman-Ford, wall follower | It expands the same cell more than once by design, so "no cell twice" does not apply to it. |
+| `truncatedSteps` | iterative deepening, Bellman-Ford | The counters are honest but step recording stopped at 4500 entries, because playback animates at most ~180 a second and a run has to stay watchable. |
 | `steps[i].revealedCells`, `.blind` | fog | What that expansion uncovered, and whether the heuristic was still unavailable. |
 | `fog`, `goalRevealed`, `initialRevealed` | fog | The run was fogged, whether the goal ever came out of it, and what was visible before the first step. |
 | `swaps`, `swapCount`, `swapPenalty` | hot swap | Each swap as `{ atStep, from, to, params }`, how many there were, and the charge per swap. |
@@ -225,13 +232,14 @@ node tools/verify-engine.js   # the registry, the trace fields and the mechanics
 
 ## Structure
 
-- `index.html` - layout and buttons.
-- `style.css` - styling.
-- `levels.js` - the ASCII maps plus objective and budgets per level, and `EXTRA_LEVELS` for the ones waiting on a button.
+- `index.html` - the full-window canvas plus the HUD that floats over it.
+- `style.css` - styling. House rule: the map is the screen, so there is no panel layout and nothing scrolls.
+- `levels.js` - the ASCII maps plus objective and budgets per level, and `EXTRA_LEVELS` for the ones waiting on a button or a mechanic.
 - `search.js` - the engine: the strategy registry, `search()`, the resumable `createSearch`/`stepSearch`/`switchStrategy` loop, and missions. Seven of the twelve strategies are the same loop with a different frontier; the other five have their own shape behind the same trace. See the engine contract above.
-- `render.js` - draws grid, visited-by-order, frontier, and path for a given trace index.
-- `game.js` - level state, button wiring, playback via `requestAnimationFrame`, scoring, compare strip.
+- `render.js` - isometric board renderer: terrain with height, exploration order, lifted frontier, raised path ribbon, and the camera (`fitCamera`, `drawScene`, `screenToCell`).
+- `game.js` - level state, camera input, playback via `requestAnimationFrame`, scoring, stars in `localStorage`, verdict and compare. The algorithm picker and its glossary cards are built from the strategy registry, so a strategy added in `search.js` appears in the UI with no change here.
 - `sprites.js` - the Factory Heist art kit: hand-authored isometric models drawn as flat-shaded canvas polygons, keyed by name and rotation. Not wired into the game yet; it is the art the 2.5D board is being rebuilt around.
+- `tests/` - the node suite (`npm test`) and the browser walkthrough.
 - `tools/` - the two verification scripts, which are the design table written down and executable, plus `render-sprites.js`, which regenerates the art sheets.
 
 ## Art

@@ -61,6 +61,20 @@ var DESIGN = [
     lesson: 'BFS holds every corridor open at once and its frontier balloons. DFS stays small and arrives.',
     stars: { bfs: 1, dfs: 3 },
     smallerFrontier: [['dfs', 'bfs']]
+  },
+  {
+    name: 'The heuristic that lies',
+    lesson: 'Teleport pads make the guess overstate the distance, so A* is confidently wrong. Dijkstra is right.',
+    // Every strategy that steers by Manhattan distance walks the long way and
+    // misses the objective outright; the two that keep relaxing are right but
+    // cannot do it inside the fuel.
+    stars: {
+      dijkstra: 3,
+      astar: 0, greedy: 0, wastar: 0, beam: 0,
+      bfs: 0, dfs: 0, bibfs: 0, iddfs: 0, wall: 0,
+      bellman: 1, flow: 1
+    },
+    fewerExpansions: [['astar', 'dijkstra']]
   }
 ];
 
