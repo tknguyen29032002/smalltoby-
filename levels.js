@@ -24,7 +24,7 @@ var LEVELS = [
   {
     name: 'Open field',
     objective: 'shortest',
-    brief: 'No walls, no swamp, goal in plain sight. Every algorithm gets there - run all four and watch the shape each one draws.',
+    brief: 'No walls, no swamp, goal in plain sight. Every algorithm gets there - run BFS and DFS and watch the shape each one draws.',
     budgets: { expansions: 120, frontier: 30 },
     map: [
       'S...........',

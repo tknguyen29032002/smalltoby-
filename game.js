@@ -45,22 +45,35 @@ var FALLBACK_STRATEGIES = [
   }
 ];
 
+// A button has room for a few words; the registry's frontier rule is a
+// sentence, so the newer strategies get a short line of their own here.
+var TAGLINES = {
+  wastar: 'cost + w x guess',
+  bibfs: 'two queues, meeting',
+  iddfs: 'deeper stack each pass',
+  beam: 'best k leads only',
+  bellman: 'relax every edge',
+  flow: 'a field from the goal',
+  wall: 'one hand on the wall'
+};
+
 function registry() {
   var list = (typeof STRATEGIES !== 'undefined' && STRATEGIES && STRATEGIES.length)
     ? STRATEGIES
     : FALLBACK_STRATEGIES;
   return list.map(function (s, i) {
     var fb = FALLBACK_STRATEGIES[i] || {};
+    // Never an id on screen: the registry's human label comes first.
     return {
       id: s.id || s.key || fb.id,
-      name: s.name || fb.name || s.id,
-      family: s.family || fb.family || 'search',
-      frontier: s.frontier || fb.frontier || '',
-      tagline: s.tagline || fb.tagline || s.frontier || '',
-      guarantee: s.guarantee || fb.guarantee || '',
-      cost: s.cost || fb.cost || '',
-      goodWhen: s.goodWhen || fb.goodWhen || '',
-      badWhen: s.badWhen || fb.badWhen || '',
+      name: s.name || s.label || fb.name || s.id,
+      family: s.family || fb.family || (s.needsHeuristic ? 'informed' : 'blind'),
+      frontier: s.frontier || fb.frontier || TAGLINES[s.id] || '',
+      tagline: s.tagline || fb.tagline || TAGLINES[s.id] || '',
+      guarantee: s.guarantee || fb.guarantee || s.description || '',
+      cost: s.cost || fb.cost || s.frontierRule || '',
+      goodWhen: s.goodWhen || fb.goodWhen || s.wins || '',
+      badWhen: s.badWhen || fb.badWhen || s.fails || '',
       weightable: s.weightable === true,
       bidirectional: s.bidirectional === true
     };
@@ -177,6 +190,23 @@ function saveStars() {
 function totalStars() {
   return Object.keys(state.earned).reduce(function (n, k) { return n + state.earned[k]; }, 0);
 }
+
+// Training hands out the first four algorithms two, then one, then one at a
+// time; everything else is out from the level after the last of them.
+var TRAINING_UNLOCKS = [['bfs', 'dfs'], ['astar'], ['dijkstra']];
+
+// Returns the 0-based level a strategy opens on.
+function unlockLevel(id) {
+  var table = TRAINING_UNLOCKS;
+  var last = 0;
+  for (var i = 0; i < table.length; i++) {
+    if (table[i].indexOf(id) !== -1) { return i; }
+    if (table[i].length) { last = i; }
+  }
+  return table.length ? last + 1 : 0;
+}
+
+function algoOpen(id) { return unlockLevel(id) <= state.levelIndex; }
 
 function unlocked(i) {
   return i === 0 || (state.earned[i - 1] || 0) > 0 || (state.earned[i] || 0) > 0;
@@ -353,9 +383,12 @@ function buildPicker() {
   el.algos.innerHTML = '';
   STRATS.forEach(function (s) {
     var b = document.createElement('button');
-    b.className = 'algo';
+    var open = algoOpen(s.id);
+    b.className = 'algo' + (open ? '' : ' locked');
     b.dataset.algo = s.id;
-    b.innerHTML = '<span>' + s.name + '</span><small>' + s.tagline + '</small>';
+    b.disabled = !open;
+    b.innerHTML = '<span>' + s.name + '</span><small>' +
+      (open ? s.tagline : 'Level ' + (unlockLevel(s.id) + 1)) + '</small>';
     b.addEventListener('click', function () { choose(s.id); });
     b.addEventListener('mouseenter', function () { showGlossary(s, b); });
     b.addEventListener('focus', function () { showGlossary(s, b); });
@@ -453,6 +486,7 @@ function loadLevel(i) {
   buildBudgets();
   buildLegend();
   buildLevelBar();
+  buildPicker();
   updateStarTotal();
   hideOverlay();
   resetRun(null);
@@ -826,7 +860,7 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') { hideOverlay(); }
   if (e.key >= '1' && e.key <= '9') {
     var s = STRATS[Number(e.key) - 1];
-    if (s) { choose(s.id); }
+    if (s && algoOpen(s.id)) { choose(s.id); }
   }
 });
 

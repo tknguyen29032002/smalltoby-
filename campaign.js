@@ -10,45 +10,60 @@
  * script tag on the page shares one global namespace.
  *
  * The design behind every number is docs/design/CAMPAIGN.md. Run
- * `node tools/verify-campaign.js` after touching anything here; it measures
- * par off the perfect lines with the real engine and fails on drift.
+ * `node tools/verify-campaign.js` after touching this file, shop.js or
+ * maps.js; it measures par off the perfect lines with the real engine and
+ * fails on drift.
+ *
+ * ---------------------------------------------------------------------------
+ * What the campaign reads off a map (maps.js owns all of it)
+ * ---------------------------------------------------------------------------
+ *   S          the first S (reading order) is where the cart starts; any
+ *              other S is a thief's den.
+ *   G, $       the deliveries: every G in reading order, then `$` pads in
+ *              reading order until the encounter's `deliveries` are placed.
+ *              `$` pads left over are where lockboxes pop up.
+ *   budgets    `expansions` is the free thinking allowance of one plot;
+ *              `frontier` is the memory a plot may hold before it overheats.
+ *   fog, goalKnown
+ *              the floor's own darkness and missing manifest. An encounter
+ *              may add either, never remove it.
  *
  * ---------------------------------------------------------------------------
  * Encounter schema
  * ---------------------------------------------------------------------------
  *   level        1-15, the order they are played in.
- *   name         what the player sees on the level card.
- *   mapId        the id of a map in maps.js. The map's `zone` and `tier` must
- *                equal this encounter's, and its G count must equal
- *                `deliveries`.
+ *   name         what the player sees on the level card (the map's name).
+ *   mapId        the id of a map in maps.js. Its `zone` and `tier` must equal
+ *                this encounter's.
  *   zone, tier   the zone key (see ZONES) and its tier, 1-5.
  *   unlocks      the power (an engine strategy id) this level hands over, or
- *                null on the three Vault levels, which hand over nothing.
- *   deliveries   2 or 3: how many red points have to be stood on to win.
+ *                null on a revision level.
+ *   deliveries   how many red points have to be stood on to win: 2 or 3, or
+ *                the map's G count when the map itself asks for more.
  *   bots         [{ type: 'basic'|'fast'|'boss', count, hp? }]. `hp` only on
  *                a boss; see BOTS for what each type does.
- *   chestRules   { every, max, gold, charge }: a lockbox pops up on a random
- *                floor cell every `every` ticks, never more than `max` on the
- *                floor at once; reaching one first pays `gold` and `charge`.
+ *   chestRules   { every, max, gold, charge }: a lockbox pops up on a free
+ *                `$` pad (or a random floor cell once those run out) every
+ *                `every` ticks, never more than `max` at once; reaching one
+ *                first pays `gold` and `charge`.
  *   prizeBehaviour
  *                { heldByBoss, hidden }. `heldByBoss` lists the deliveries
- *                (indices into the map's G cells, reading order) that start in
- *                a boss's grip - one per boss - and are only released when it
- *                dies. `hidden` means the manifest is missing: the player is
- *                not told where the deliveries are, so no heuristic has
- *                anything to aim at until one is seen.
+ *                (indices into the delivery cells above) that start in a
+ *                foreman's grip - one per foreman - and are only released when
+ *                it dies. `hidden`: the manifest is missing, so no heuristic
+ *                has anything to aim at until a delivery is seen.
  *   fog          the floor is dark outside what the cart has stood next to.
- *   memoryCap    null, or the most frontier a plot may hold. A plot that
- *                needs more overheats: it costs its charge and goes nowhere.
+ *   memoryCap    null, or a memory limit tighter than the map's own frontier
+ *                budget. A plot holding more frontier overheats.
  *   swapCap      how many times the power may change in the level.
  *   rewards      { clear, twoStar, threeStar } gold, on top of deliveries and
  *                lockboxes.
  *   shopUnlocks  boost ids (shop.js) that become buyable after this level.
  *   perfectLine  { note, legs: [{ power, to, hits? }] } - the authored
  *                intended solution, one leg per delivery in the order they are
- *                taken. `to` is a delivery index. `hits` is the boss's hp on a
- *                leg to a boss-held delivery: the power has to reach the boss
- *                that many times before the delivery is released.
+ *                taken. `to` is a delivery index. `hits` is the foreman's hp on
+ *                a leg to a held delivery: the power has to reach him that
+ *                many times before the delivery is released.
  *   par          { ticks, charge } - the two-star and three-star lines.
  *   startCharge  the charge the cart starts with. Zero is a loss.
  *                par and startCharge are measured, never guessed:
@@ -65,9 +80,11 @@ var Campaign = (function () {
    * measured in, so heist.js charges the same way or par means nothing.
    * ------------------------------------------------------------------ */
   var ECONOMY = {
-    // A plot costs its search: ceil(chargedExpansions / plotDivisor). Hot-swap
-    // penalties are in chargedExpansions already.
-    plotDivisor: 10,
+    // A plot costs plotBase, plus one charge for every expansion past the
+    // map's thinking allowance (budgets.expansions; no budget, no overage).
+    // Hot-swap penalties count as expansions. A plot whose frontier passes
+    // budgets.frontier overheats: it costs its charge and goes nowhere.
+    plotBase: 1,
     // Riding costs the terrain of every cell entered: plate 1, oil 5, and a
     // power cell pays 4 back (the engine's TERRAIN_COST).
     // A plot takes one tick, each cell ridden one more, and wading out of oil
@@ -76,10 +93,8 @@ var Campaign = (function () {
     oilStallTicks: 1,
     // A WASD nudge: one cell, one tick, the cell's terrain plus this.
     nudgeSurcharge: 2,
-    // Par is the perfect line plus room for the floor moving: this much,
-    // and a little more for every boss on it.
+    // Par is the perfect line plus this much room for the floor moving.
     parSlack: 1.15,
-    parSlackPerBoss: 0.05,
     // Starting charge is par charge times this: generous early, tight late.
     startMargin: { 1: 2.0, 2: 1.8, 3: 1.6, 4: 1.5, 5: 1.4 },
     // Gold for each delivery secured, by tier.
@@ -114,27 +129,28 @@ var Campaign = (function () {
     }
   };
 
+  /* The five zones are maps.js's five zones, one tier each. */
   var ZONES = [
-    { key: 'receiving', name: 'Receiving', tier: 1, bossShieldedFrom: null, swapCap: 5, fog: false,
-      tightens: 'Nothing yet. Three powers arrive; the floor is lit and there is no foreman.' },
-    { key: 'oil-line', name: 'The Oil Line', tier: 2, bossShieldedFrom: 'astar', swapCap: 5, fog: false,
-      tightens: 'Foremen arrive, proofed against the dart that just became the easy answer.' },
-    { key: 'long-halls', name: 'The Long Halls', tier: 3, bossShieldedFrom: 'wastar', swapCap: 4, fog: false,
-      tightens: 'Memory is rationed and one manifest goes missing. Four swaps.' },
-    { key: 'power-row', name: 'Power Row', tier: 4, bossShieldedFrom: 'beam', swapCap: 4, fog: true,
-      tightens: 'Power cells, two foremen proofed against the slitlamp, and the lights go out.' },
-    { key: 'vault', name: 'The Vault', tier: 5, bossShieldedFrom: 'dijkstra', swapCap: 3, fog: true,
-      tightens: 'No new powers. Three swaps, dark floors, and everything the factory has.' }
+    { key: 'dock', name: 'The dock', tier: 1, bossShieldedFrom: null, swapCap: 5,
+      tightens: 'Nothing yet. Three powers arrive on open floor, and there is no foreman.' },
+    { key: 'assembly', name: 'Assembly', tier: 2, bossShieldedFrom: 'astar', swapCap: 5,
+      tightens: 'Thinking has a budget, and foremen arrive proofed against the dart that just became the easy answer.' },
+    { key: 'racks', name: 'The racks', tier: 3, bossShieldedFrom: 'beam', swapCap: 4,
+      tightens: 'Memory is the budget, a manifest goes missing, and the swap cap drops to four.' },
+    { key: 'chutes', name: 'The chutes', tier: 4, bossShieldedFrom: 'bibfs', swapCap: 4,
+      tightens: 'Teleporters make the ruler lie and power cells make it lie twice. Two foremen, proofed against the pincer.' },
+    { key: 'control', name: 'Control', tier: 5, bossShieldedFrom: 'flow', swapCap: 3,
+      tightens: 'The biggest floors in the dark, memory rationed, three swaps, and foremen proofed against the field.' }
   ];
 
   /* ---------------------------------------------------------------------
-   * The fifteen encounters. Why each power lands where it does is the
-   * unlock table in CAMPAIGN.md: each one arrives on the level whose trap
-   * it is the answer to.
+   * The fifteen encounters, one per map, in maps.js's order. Each power
+   * arrives on the map whose trap it is the answer to (the unlock table in
+   * CAMPAIGN.md); the three revision levels hand over nothing.
    * ------------------------------------------------------------------ */
   var ENCOUNTERS = [
     {
-      level: 1, name: 'Night shift', mapId: 'receiving-1', zone: 'receiving', tier: 1,
+      level: 1, name: 'Loading bay', mapId: 'dock-loading-bay', zone: 'dock', tier: 1,
       unlocks: 'bfs', deliveries: 2, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 1 }],
       chestRules: { every: 12, max: 1, gold: 5, charge: 6 },
@@ -143,28 +159,28 @@ var Campaign = (function () {
       shopUnlocks: ['recharge'],
       teaches: 'A sweep spreads evenly in every direction and is never wrong about the number of steps.',
       perfectLine: {
-        note: 'Sweep to the near delivery, then sweep again from where you stand.',
+        note: 'Sweep the short hop to the pad, then sweep again from where you stand to the prize.',
         legs: [{ power: 'bfs', to: 1 }, { power: 'bfs', to: 0 }]
       },
-      par: { ticks: 38, charge: 67 }, startCharge: 134
+      par: { ticks: 21, charge: 21 }, startCharge: 42
     },
     {
-      level: 2, name: 'The aisles', mapId: 'receiving-2', zone: 'receiving', tier: 1,
-      unlocks: 'dfs', deliveries: 2, fog: false, memoryCap: 8, swapCap: 5,
+      level: 2, name: 'The crate cup', mapId: 'dock-crate-cup', zone: 'dock', tier: 1,
+      unlocks: 'greedy', deliveries: 2, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 2 }],
       chestRules: { every: 12, max: 1, gold: 5, charge: 6 },
       prizeBehaviour: { heldByBoss: [], hidden: false },
       rewards: { clear: 10, twoStar: 5, threeStar: 10 },
       shopUnlocks: ['freeze'],
-      teaches: 'A sweep holds every aisle open at once; a bore holds one. When memory is the limit, that is the whole bill.',
+      teaches: 'The prize is in plain sight across a wide floor: a snap that leans straight at it thinks a fraction of what a sweep does.',
       perfectLine: {
-        note: 'The sweep overheats on the comb. The bore walks one aisle at a time, which is all the memory this floor leaves you.',
-        legs: [{ power: 'dfs', to: 0 }, { power: 'dfs', to: 1 }]
+        note: 'Sweep the short hop to the pad; snap across the open floor to the prize, where a sweep would pay for the whole cup.',
+        legs: [{ power: 'bfs', to: 1 }, { power: 'greedy', to: 0 }]
       },
-      par: { ticks: 148, charge: 172 }, startCharge: 344
+      par: { ticks: 32, charge: 32 }, startCharge: 64
     },
     {
-      level: 3, name: 'First spill', mapId: 'receiving-3', zone: 'receiving', tier: 1,
+      level: 3, name: 'Oil on the apron', mapId: 'dock-oil-apron', zone: 'dock', tier: 1,
       unlocks: 'dijkstra', deliveries: 2, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 3 }, { type: 'fast', count: 1 }],
       chestRules: { every: 12, max: 1, gold: 6, charge: 6 },
@@ -173,190 +189,190 @@ var Campaign = (function () {
       shopUnlocks: [],
       teaches: 'Oil costs five a cell. Counting steps and counting charge stop being the same question.',
       perfectLine: {
-        note: 'The meter is the only power here that walks round the spill instead of through it.',
-        legs: [{ power: 'dijkstra', to: 0 }, { power: 'dijkstra', to: 1 }]
+        note: 'Sweep the dry hop to the pad; meter the leg to the prize, where the slick sits in the way.',
+        legs: [{ power: 'bfs', to: 1 }, { power: 'dijkstra', to: 0 }]
       },
-      par: { ticks: 40, charge: 76 }, startCharge: 152
+      par: { ticks: 42, charge: 42 }, startCharge: 84
     },
     {
-      level: 4, name: 'Foreman on the line', mapId: 'oil-line-1', zone: 'oil-line', tier: 2,
+      level: 4, name: 'Line one', mapId: 'assembly-line-one', zone: 'assembly', tier: 2,
       unlocks: 'astar', deliveries: 2, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 2 }, { type: 'fast', count: 1 }, { type: 'boss', count: 1, hp: 3 }],
-      chestRules: { every: 10, max: 2, gold: 6, charge: 8 },
+      chestRules: { every: 10, max: 1, gold: 6, charge: 8 },
       prizeBehaviour: { heldByBoss: [1], hidden: false },
       rewards: { clear: 15, twoStar: 8, threeStar: 12 },
       shopUnlocks: ['reveal'],
-      teaches: 'Both deliveries are in plain sight, so the guess is finally worth something - but the foreman shrugs it off.',
+      teaches: 'Thinking has a budget now. The dart counts oil like the meter and aims like the snap, so it finishes inside the allowance.',
       perfectLine: {
-        note: 'Dart to the free delivery; the foreman is proofed against the dart, so meter him down.',
-        legs: [{ power: 'astar', to: 0 }, { power: 'dijkstra', to: 1, hits: 3 }]
+        note: 'Meter the foreman down first - he shrugs off the dart - then dart to the prize inside the thinking allowance.',
+        legs: [{ power: 'dijkstra', to: 1, hits: 3 }, { power: 'astar', to: 0 }]
       },
-      par: { ticks: 45, charge: 137 }, startCharge: 247
+      par: { ticks: 44, charge: 44 }, startCharge: 80
     },
     {
-      level: 5, name: 'Deadline', mapId: 'oil-line-2', zone: 'oil-line', tier: 2,
-      unlocks: 'greedy', deliveries: 3, fog: false, memoryCap: null, swapCap: 5,
+      level: 5, name: 'The press trap', mapId: 'assembly-press-trap', zone: 'assembly', tier: 2,
+      unlocks: 'wastar', deliveries: 2, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 2 }, { type: 'fast', count: 2 }, { type: 'boss', count: 1, hp: 3 }],
-      chestRules: { every: 10, max: 2, gold: 6, charge: 8 },
-      prizeBehaviour: { heldByBoss: [2], hidden: false },
+      chestRules: { every: 10, max: 1, gold: 6, charge: 8 },
+      prizeBehaviour: { heldByBoss: [1], hidden: false },
       rewards: { clear: 15, twoStar: 8, threeStar: 12 },
       shopUnlocks: [],
-      teaches: 'Three deliveries and the floor is moving: a snap that plots for nothing beats a perfect line that arrives late.',
+      teaches: 'A flooded press tempts the snap. The dial trusts the guess only as far as the oil lets it.',
       perfectLine: {
-        note: 'Snap at the open deliveries, snap the foreman down - nothing on this floor punishes the guess.',
-        legs: [{ power: 'greedy', to: 1 }, { power: 'greedy', to: 0 }, { power: 'greedy', to: 2, hits: 3 }]
+        note: 'Sweep the foreman on the near pad, then dial past the flooded press to the prize.',
+        legs: [{ power: 'bfs', to: 1, hits: 3 }, { power: 'wastar', to: 0 }]
       },
-      par: { ticks: 51, charge: 53 }, startCharge: 96
+      par: { ticks: 44, charge: 44 }, startCharge: 80
     },
     {
-      level: 6, name: 'The dial', mapId: 'oil-line-3', zone: 'oil-line', tier: 2,
-      unlocks: 'wastar', deliveries: 3, fog: false, memoryCap: null, swapCap: 5,
+      level: 6, name: 'The narrow gantry', mapId: 'assembly-narrow-gantry', zone: 'assembly', tier: 2,
+      unlocks: 'beam', deliveries: 2, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 3 }, { type: 'fast', count: 2 }, { type: 'boss', count: 1, hp: 3 }],
-      chestRules: { every: 10, max: 2, gold: 6, charge: 8 },
-      prizeBehaviour: { heldByBoss: [2], hidden: false },
+      chestRules: { every: 10, max: 1, gold: 6, charge: 8 },
+      prizeBehaviour: { heldByBoss: [1], hidden: false },
       rewards: { clear: 15, twoStar: 8, threeStar: 12 },
       shopUnlocks: ['extra-swap'],
-      teaches: 'One dial runs from the meter to the snap. The deep spill decides how much wrong you can afford.',
+      teaches: 'Memory is so tight on the gantry that every other power overheats. Cap the light at a few cells and it still crosses.',
       perfectLine: {
-        note: 'Dial at 2 is cheap enough to plot and honest enough to walk round the spill the snap wades into.',
-        legs: [{ power: 'wastar', to: 0 }, { power: 'wastar', to: 1 }, { power: 'wastar', to: 2, hits: 3 }]
+        note: 'Slitlamp across the gantry to the prize; the foreman\'s pad is off the gantry, where the dial fits.',
+        legs: [{ power: 'beam', to: 0 }, { power: 'wastar', to: 1, hits: 3 }]
       },
-      par: { ticks: 46, charge: 52 }, startCharge: 94
+      par: { ticks: 89, charge: 89 }, startCharge: 161
     },
     {
-      level: 7, name: 'The long hall', mapId: 'long-halls-1', zone: 'long-halls', tier: 3,
-      unlocks: 'bibfs', deliveries: 3, fog: false, memoryCap: 24, swapCap: 4,
-      bots: [{ type: 'basic', count: 3 }, { type: 'fast', count: 2 }, { type: 'boss', count: 1, hp: 3 }],
-      chestRules: { every: 9, max: 2, gold: 7, charge: 8 },
-      prizeBehaviour: { heldByBoss: [2], hidden: false },
+      level: 7, name: 'Shelf comb', mapId: 'racks-shelf-comb', zone: 'racks', tier: 3,
+      unlocks: 'dfs', deliveries: 2, fog: false, memoryCap: null, swapCap: 4,
+      bots: [{ type: 'basic', count: 3 }, { type: 'fast', count: 3 }, { type: 'boss', count: 1, hp: 3 }],
+      chestRules: { every: 9, max: 1, gold: 7, charge: 8 },
+      prizeBehaviour: { heldByBoss: [1], hidden: false },
       rewards: { clear: 20, twoStar: 10, threeStar: 15 },
       shopUnlocks: [],
-      teaches: 'Both ends are known and the hall between them is long: two small searches cost less than one big one.',
+      teaches: 'A sweep holds every aisle open at once; a bore holds one. When memory is the limit, that is the whole bill.',
       perfectLine: {
-        note: 'The pincer walks every hall. It is the cheapest power on the floor that the foreman is not proofed against.',
-        legs: [{ power: 'bibfs', to: 0 }, { power: 'bibfs', to: 1 }, { power: 'bibfs', to: 2, hits: 3 }]
+        note: 'Snap at the foreman on the open pad, then bore the comb to the prize one aisle at a time.',
+        legs: [{ power: 'greedy', to: 1, hits: 3 }, { power: 'dfs', to: 0 }]
       },
-      par: { ticks: 82, charge: 112 }, startCharge: 180
+      par: { ticks: 189, charge: 227 }, startCharge: 364
     },
     {
-      level: 8, name: 'Unlisted', mapId: 'long-halls-2', zone: 'long-halls', tier: 3,
-      unlocks: 'iddfs', deliveries: 3, fog: false, memoryCap: 10, swapCap: 4,
-      bots: [{ type: 'basic', count: 4 }, { type: 'fast', count: 2 }, { type: 'boss', count: 1, hp: 3 }],
-      chestRules: { every: 9, max: 2, gold: 7, charge: 8 },
+      level: 8, name: 'Dark aisles', mapId: 'racks-dark-aisles', zone: 'racks', tier: 3,
+      unlocks: 'iddfs', deliveries: 3, fog: false, memoryCap: null, swapCap: 4,
+      bots: [{ type: 'basic', count: 4 }, { type: 'fast', count: 3 }, { type: 'boss', count: 1, hp: 3 }],
+      chestRules: { every: 9, max: 1, gold: 7, charge: 8 },
       prizeBehaviour: { heldByBoss: [2], hidden: true },
       rewards: { clear: 20, twoStar: 10, threeStar: 15 },
       shopUnlocks: [],
-      teaches: 'Nobody logged where the deliveries went, and memory is short. The sonar answers shortest on a stack-sized memory.',
+      teaches: 'Nobody logged where the prize went, and memory is four cells. The sonar answers shortest on a stack-sized memory.',
       perfectLine: {
-        note: 'Sonar for the first delivery while the manifest is missing and nothing else fits the memory; once the floor is known, bore the foreman and sweep home.',
-        legs: [{ power: 'iddfs', to: 1 }, { power: 'dfs', to: 2, hits: 3 }, { power: 'bfs', to: 0 }]
+        note: 'Slitlamp to the first pad, sonar down the aisle to the foreman, slitlamp back to the prize nobody logged.',
+        legs: [{ power: 'beam', to: 1 }, { power: 'iddfs', to: 2, hits: 3 }, { power: 'beam', to: 0 }]
       },
-      par: { ticks: 78, charge: 134 }, startCharge: 215
+      par: { ticks: 135, charge: 135 }, startCharge: 216
     },
     {
-      level: 9, name: 'Wide floor', mapId: 'long-halls-3', zone: 'long-halls', tier: 3,
-      unlocks: 'beam', deliveries: 3, fog: false, memoryCap: 12, swapCap: 4,
+      level: 9, name: 'Hand on the rack', mapId: 'racks-hand-on-rack', zone: 'racks', tier: 3,
+      unlocks: 'wall', deliveries: 3, fog: true, memoryCap: null, swapCap: 4,
       bots: [{ type: 'basic', count: 4 }, { type: 'fast', count: 4 }, { type: 'boss', count: 1, hp: 3 }],
-      chestRules: { every: 9, max: 2, gold: 7, charge: 8 },
+      chestRules: { every: 9, max: 1, gold: 7, charge: 8 },
       prizeBehaviour: { heldByBoss: [2], hidden: false },
       rewards: { clear: 20, twoStar: 10, threeStar: 15 },
       shopUnlocks: [],
-      teaches: 'The widest floor in the factory and a small memory. Cap the light at a few cells and it still crosses.',
+      teaches: 'No memory and no light. Every rack is joined up, and a hand on the wall holds no frontier and needs no light.',
       perfectLine: {
-        note: 'Slitlamp across the open floor; there is no corridor narrow enough to punish the cap.',
-        legs: [{ power: 'beam', to: 1 }, { power: 'beam', to: 0 }, { power: 'beam', to: 2, hits: 3 }]
+        note: 'One straight hop fits in one cell of memory; everything after it needs a hand on the rack.',
+        legs: [{ power: 'bfs', to: 1 }, { power: 'wall', to: 2, hits: 3 }, { power: 'wall', to: 0 }]
       },
-      par: { ticks: 65, charge: 74 }, startCharge: 119
+      par: { ticks: 251, charge: 265 }, startCharge: 424
     },
     {
-      level: 10, name: 'Power row', mapId: 'power-row-1', zone: 'power-row', tier: 4,
-      unlocks: 'bellman', deliveries: 3, fog: true, memoryCap: null, swapCap: 4,
+      level: 10, name: 'Crossed chutes', mapId: 'chutes-crossed', zone: 'chutes', tier: 4,
+      unlocks: 'bibfs', deliveries: 3, fog: false, memoryCap: null, swapCap: 4,
       bots: [{ type: 'basic', count: 4 }, { type: 'fast', count: 4 }, { type: 'boss', count: 1, hp: 4 }],
-      chestRules: { every: 8, max: 2, gold: 8, charge: 10 },
+      chestRules: { every: 8, max: 1, gold: 8, charge: 10 },
       prizeBehaviour: { heldByBoss: [2], hidden: false },
+      rewards: { clear: 25, twoStar: 12, threeStar: 18 },
+      shopUnlocks: [],
+      teaches: 'Teleporters make every guess confidently wrong. With both ends known, two small sweeps that meet in the middle trust no ruler.',
+      perfectLine: {
+        note: 'Sweep the foreman and the prize, then pincer the long run to the last pad, where the chutes lie to every power that aims.',
+        legs: [{ power: 'bfs', to: 2, hits: 4 }, { power: 'bfs', to: 0 }, { power: 'bibfs', to: 1 }]
+      },
+      par: { ticks: 56, charge: 56 }, startCharge: 84
+    },
+    {
+      level: 11, name: 'Power cells', mapId: 'chutes-power-cells', zone: 'chutes', tier: 4,
+      unlocks: 'bellman', deliveries: 3, fog: false, memoryCap: null, swapCap: 4,
+      bots: [{ type: 'basic', count: 5 }, { type: 'fast', count: 4 }, { type: 'boss', count: 2, hp: 4 }],
+      chestRules: { every: 8, max: 1, gold: 8, charge: 10 },
+      prizeBehaviour: { heldByBoss: [1, 2], hidden: false },
       rewards: { clear: 25, twoStar: 12, threeStar: 18 },
       shopUnlocks: [],
       teaches: 'A power cell pays charge back, so a route can get cheaper after it looked finished. Only the relay keeps asking.',
       perfectLine: {
-        note: 'Relay down the cell stack where the refund beats the extra passes, then meter the foreman: he is proofed against the slitlamp.',
-        legs: [{ power: 'bellman', to: 1 }, { power: 'bellman', to: 0 }, { power: 'dijkstra', to: 2, hits: 4 }]
+        note: 'Relay the foreman down the cells, where the refund is worth the extra passes; sweep the short hops after.',
+        legs: [{ power: 'bellman', to: 2, hits: 4 }, { power: 'bfs', to: 0 }, { power: 'bfs', to: 1, hits: 4 }]
       },
-      par: { ticks: 68, charge: 219 }, startCharge: 329
+      par: { ticks: 107, charge: 88 }, startCharge: 132
     },
     {
-      level: 11, name: 'Lockbox floor', mapId: 'power-row-2', zone: 'power-row', tier: 4,
-      unlocks: 'flow', deliveries: 3, fog: false, memoryCap: null, swapCap: 4,
-      bots: [{ type: 'basic', count: 5 }, { type: 'fast', count: 4 }, { type: 'boss', count: 2, hp: 4 }],
-      chestRules: { every: 6, max: 4, gold: 8, charge: 10 },
+      level: 12, name: 'The drop shaft', mapId: 'chutes-drop-shaft', zone: 'chutes', tier: 4,
+      unlocks: null, deliveries: 3, fog: false, memoryCap: null, swapCap: 4,
+      bots: [{ type: 'basic', count: 5 }, { type: 'fast', count: 5 }, { type: 'boss', count: 2, hp: 4 }],
+      chestRules: { every: 8, max: 1, gold: 8, charge: 10 },
       prizeBehaviour: { heldByBoss: [1, 2], hidden: false },
       rewards: { clear: 25, twoStar: 12, threeStar: 18 },
       shopUnlocks: [],
-      teaches: 'Lockboxes everywhere and one floor. A field built backwards from a target answers every cell at once.',
+      teaches: 'Teleporters and power cells on one shaft. The relay finds the true cheapest route; everything else settles.',
       perfectLine: {
-        note: 'Field the free delivery, then keep the field up for both foremen.',
-        legs: [{ power: 'flow', to: 0 }, { power: 'flow', to: 1, hits: 4 }, { power: 'flow', to: 2, hits: 4 }]
+        note: 'Sweep both foremen on the short hops, then relay down the shaft to the prize.',
+        legs: [{ power: 'bfs', to: 1, hits: 4 }, { power: 'bfs', to: 2, hits: 4 }, { power: 'bellman', to: 0 }]
       },
-      par: { ticks: 97, charge: 275 }, startCharge: 413
+      par: { ticks: 89, charge: 55 }, startCharge: 83
     },
     {
-      level: 12, name: 'The racks', mapId: 'power-row-3', zone: 'power-row', tier: 4,
-      unlocks: 'wall', deliveries: 3, fog: true, memoryCap: 4, swapCap: 4,
-      bots: [{ type: 'basic', count: 5 }, { type: 'fast', count: 4 }, { type: 'boss', count: 2, hp: 4 }],
-      chestRules: { every: 8, max: 2, gold: 8, charge: 10 },
-      prizeBehaviour: { heldByBoss: [1, 2], hidden: false },
-      rewards: { clear: 25, twoStar: 12, threeStar: 18 },
+      level: 13, name: 'Sorting floor', mapId: 'control-sorting-floor', zone: 'control', tier: 5,
+      unlocks: null, deliveries: 4, fog: true, memoryCap: 12, swapCap: 3,
+      bots: [{ type: 'basic', count: 5 }, { type: 'fast', count: 5 }, { type: 'boss', count: 2, hp: 5 }],
+      chestRules: { every: 8, max: 2, gold: 9, charge: 10 },
+      prizeBehaviour: { heldByBoss: [2, 3], hidden: false },
+      rewards: { clear: 30, twoStar: 15, threeStar: 20 },
       shopUnlocks: [],
-      teaches: 'Every wall in the racks is joined up, and the dark costs you nothing if you never let go of one.',
+      teaches: 'Four prizes across oil. The meter prices every leg honestly; the foremen make you change tools for the fight.',
       perfectLine: {
-        note: 'Sweep the short hops that fit in four cells of memory; for the far corner of the racks, a hand on the wall holds no frontier at all.',
-        legs: [{ power: 'bfs', to: 1, hits: 4 }, { power: 'bfs', to: 0 }, { power: 'wall', to: 2, hits: 4 }]
+        note: 'Meter the first prize across the oil, then sweep the foremen and the last prize on short hops that fit the memory.',
+        legs: [{ power: 'dijkstra', to: 1 }, { power: 'bfs', to: 3, hits: 5 }, { power: 'bfs', to: 2, hits: 5 }, { power: 'bfs', to: 0 }]
       },
-      par: { ticks: 112, charge: 138 }, startCharge: 207
+      par: { ticks: 209, charge: 209 }, startCharge: 293
     },
     {
-      level: 13, name: 'Vault approach', mapId: 'vault-1', zone: 'vault', tier: 5,
-      unlocks: null, deliveries: 3, fog: true, memoryCap: null, swapCap: 3,
-      bots: [{ type: 'basic', count: 5 }, { type: 'fast', count: 4 }, { type: 'boss', count: 2, hp: 5 }],
-      chestRules: { every: 8, max: 3, gold: 9, charge: 10 },
+      level: 14, name: 'Fleet recall', mapId: 'control-fleet-recall', zone: 'control', tier: 5,
+      unlocks: 'flow', deliveries: 3, fog: true, memoryCap: 14, swapCap: 3,
+      bots: [{ type: 'basic', count: 7 }, { type: 'fast', count: 6 }, { type: 'boss', count: 2, hp: 5 }],
+      chestRules: { every: 7, max: 2, gold: 9, charge: 10 },
       prizeBehaviour: { heldByBoss: [1, 2], hidden: false },
       rewards: { clear: 30, twoStar: 15, threeStar: 20 },
       shopUnlocks: [],
-      teaches: 'The chutes make the ruler lie, and the dark means you find that out late. Three swaps to fix it.',
+      teaches: 'Four dens, one dock. A field built backwards from the prize once answers every cell that asks.',
       perfectLine: {
-        note: 'Slitlamp the free delivery while the floor is dark, bore the short hop to the near foreman, slitlamp the far one.',
-        legs: [{ power: 'beam', to: 0 }, { power: 'dfs', to: 2, hits: 5 }, { power: 'beam', to: 1, hits: 5 }]
+        note: 'Sweep and meter the foremen - they shrug off the field - then field the prize the dens all run to.',
+        legs: [{ power: 'bfs', to: 1, hits: 5 }, { power: 'dijkstra', to: 2, hits: 5 }, { power: 'flow', to: 0 }]
       },
-      par: { ticks: 82, charge: 145 }, startCharge: 203
+      par: { ticks: 140, charge: 140 }, startCharge: 196
     },
     {
-      level: 14, name: 'Everything at once', mapId: 'vault-2', zone: 'vault', tier: 5,
+      level: 15, name: 'The vault', mapId: 'control-the-vault', zone: 'control', tier: 5,
       unlocks: null, deliveries: 3, fog: true, memoryCap: null, swapCap: 3,
-      bots: [{ type: 'basic', count: 6 }, { type: 'fast', count: 4 }, { type: 'boss', count: 2, hp: 5 }],
-      chestRules: { every: 7, max: 3, gold: 9, charge: 10 },
-      prizeBehaviour: { heldByBoss: [1, 2], hidden: false },
-      rewards: { clear: 30, twoStar: 15, threeStar: 20 },
-      shopUnlocks: [],
-      teaches: 'Oil, a power cell, racks and a chute on one floor. No single power is right for every leg of it.',
-      perfectLine: {
-        note: 'Dart the near foreman, let the rail carry you through the racks to the free delivery, bore the last hop.',
-        legs: [{ power: 'astar', to: 1, hits: 5 }, { power: 'wall', to: 0 }, { power: 'dfs', to: 2, hits: 5 }]
-      },
-      par: { ticks: 68, charge: 99 }, startCharge: 139
-    },
-    {
-      level: 15, name: 'The strongroom', mapId: 'vault-3', zone: 'vault', tier: 5,
-      unlocks: null, deliveries: 3, fog: true, memoryCap: null, swapCap: 3,
-      bots: [{ type: 'basic', count: 6 }, { type: 'fast', count: 4 }, { type: 'boss', count: 3, hp: 5 }],
-      chestRules: { every: 7, max: 3, gold: 10, charge: 10 },
-      prizeBehaviour: { heldByBoss: [0, 1, 2], hidden: true },
+      bots: [{ type: 'basic', count: 7 }, { type: 'fast', count: 6 }, { type: 'boss', count: 3, hp: 5 }],
+      chestRules: { every: 7, max: 2, gold: 10, charge: 10 },
+      prizeBehaviour: { heldByBoss: [0, 1, 2], hidden: false },
       rewards: { clear: 40, twoStar: 20, threeStar: 30 },
       shopUnlocks: [],
-      teaches: 'Three foremen, three deliveries, and nothing on the manifest. Everything the factory taught you, in one shift.',
+      teaches: 'Fog, oil, a lying teleporter and a charging shaft on one floor, and three foremen. Everything the factory taught you, in one shift.',
       perfectLine: {
-        note: 'Blind dart to the first foreman, bore the short hop, and the pincer for the long haul home.',
-        legs: [{ power: 'astar', to: 1, hits: 5 }, { power: 'dfs', to: 2, hits: 5 }, { power: 'bibfs', to: 0, hits: 5 }]
+        note: 'Sweep, meter, sweep: three foremen, each on the power that prices his leg honestly in the dark.',
+        legs: [{ power: 'bfs', to: 1, hits: 5 }, { power: 'dijkstra', to: 2, hits: 5 }, { power: 'bfs', to: 0, hits: 5 }]
       },
-      par: { ticks: 81, charge: 151 }, startCharge: 212
+      par: { ticks: 98, charge: 61 }, startCharge: 86
     }
   ];
 
@@ -397,10 +413,39 @@ var Campaign = (function () {
     return boss ? boss.hp : 0;
   }
 
-  /* What a plot costs, off an engine trace. */
-  function plotCharge(trace) {
+  /* What a plot costs, off an engine trace and the map it ran on. */
+  function plotCharge(trace, map) {
     var spent = trace.chargedExpansions !== undefined ? trace.chargedExpansions : trace.expansions;
-    return Math.max(1, Math.ceil(spent / ECONOMY.plotDivisor));
+    var allowance = map.budgets && map.budgets.expansions !== undefined ? map.budgets.expansions : Infinity;
+    return ECONOMY.plotBase + Math.max(0, spent - allowance);
+  }
+
+  /* The most frontier a plot may hold, or null for no limit: the map's
+   * budget, tightened by the encounter's memoryCap when it sets one. */
+  function memoryOf(enc, map) {
+    var caps = [];
+    if (map.budgets && map.budgets.frontier !== undefined) { caps.push(map.budgets.frontier); }
+    if (enc.memoryCap !== null && enc.memoryCap !== undefined) { caps.push(enc.memoryCap); }
+    return caps.length ? Math.min.apply(null, caps) : null;
+  }
+
+  function cellsOf(map, glyph) {
+    var out = [];
+    map.ascii.split('\n').forEach(function (row, y) {
+      for (var x = 0; x < row.length; x++) { if (row[x] === glyph) { out.push({ x: x, y: y }); } }
+    });
+    return out;
+  }
+
+  /* Where the deliveries are: every G, then $ pads, in reading order. */
+  function deliveryCellsOf(enc, map) {
+    return cellsOf(map, 'G').concat(cellsOf(map, '$')).slice(0, enc.deliveries);
+  }
+
+  /* The $ pads left for lockboxes once the deliveries are placed. */
+  function chestPadsOf(enc, map) {
+    var taken = enc.deliveries - cellsOf(map, 'G').length;
+    return cellsOf(map, '$').slice(Math.max(0, taken));
   }
 
   /* Stars. Cumulative: the second needs the first, the third needs both.
@@ -430,7 +475,7 @@ var Campaign = (function () {
   /* The difficulty metric the ladder is monotone in (CAMPAIGN.md). */
   var DIFFICULTY_WEIGHTS = {
     tier: 4, basic: 1, fast: 2, bossHp: 1, delivery: 2,
-    fog: 3, hidden: 3, memoryCap: 2, lostSwap: 1
+    fog: 3, hidden: 3, lostSwap: 1
   };
 
   function difficultyOf(enc) {
@@ -441,7 +486,6 @@ var Campaign = (function () {
     });
     if (enc.fog) { d += w.fog; }
     if (enc.prizeBehaviour.hidden) { d += w.hidden; }
-    if (enc.memoryCap !== null) { d += w.memoryCap; }
     d += w.lostSwap * (ZONES[0].swapCap - enc.swapCap);
     return d;
   }
@@ -461,6 +505,9 @@ var Campaign = (function () {
     bossesOf: bossesOf,
     bossHp: bossHp,
     plotCharge: plotCharge,
+    memoryOf: memoryOf,
+    deliveryCellsOf: deliveryCellsOf,
+    chestPadsOf: chestPadsOf,
     starsFor: starsFor,
     goldFor: goldFor,
     difficultyOf: difficultyOf

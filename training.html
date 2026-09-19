@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Factory Heist - Training</title>
+  <!-- inline favicon: keeps file:// and localhost consoles free of a 404 -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2311141d'/%3E%3Crect x='2' y='2' width='4' height='4' fill='%2327ae72'/%3E%3Crect x='10' y='10' width='4' height='4' fill='%23e8503a'/%3E%3Cpath d='M4 4 L12 4 L12 12' stroke='%23ff5d73' stroke-width='2' fill='none'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- The map is the screen. Everything else floats over it. -->
+  <canvas id="map" role="img" aria-label="Isometric map of the level. The mission, budgets and result are given as text around it."></canvas>
+
+  <div class="hud">
+    <div class="hud-top">
+      <div class="mission">
+        <div class="mission-line">
+          <span id="level-progress" class="chapter"></span>
+          <h1 id="level-title"></h1>
+          <span id="star-total" class="star-total"></span>
+        </div>
+        <p id="objective" class="objective"></p>
+        <p id="level-brief" class="brief"></p>
+      </div>
+
+      <div class="readouts">
+        <div id="budgets" class="budgets"></div>
+        <div id="legend" class="legend"></div>
+      </div>
+    </div>
+
+    <div class="hud-bottom">
+      <div id="algos" class="algos"></div>
+      <div class="transport">
+        <button id="btn-play" class="primary" disabled>Play</button>
+        <button id="btn-step" disabled>Step</button>
+        <label class="speed">Speed<input id="speed" type="range" min="1" max="30" value="4" /></label>
+        <label id="weight-box" class="speed hidden">Weight <b id="weight-val">1.0</b><input id="weight" type="range" min="10" max="50" value="10" /></label>
+        <button id="btn-retry" disabled>Retry</button>
+        <span class="keyhint">space play &middot; &rarr; step &middot; drag pan &middot; scroll zoom &middot; F fit</span>
+        <a class="link" href="index.html">&larr; Factory Heist</a>
+      </div>
+      <div id="levelbar" class="levelbar"></div>
+    </div>
+  </div>
+
+  <!-- Glossary card for the algorithm under the pointer, built from the registry. -->
+  <div id="glossary" class="glossary hidden" role="tooltip"></div>
+
+  <!-- Verdict and compare, over the map, dismissed with a click. -->
+  <div id="overlay" class="overlay hidden">
+    <div class="sheet">
+      <button id="overlay-close" class="close" aria-label="Dismiss">&times;</button>
+      <div class="verdict" role="status" aria-live="polite">
+        <div id="stars" class="stars"></div>
+        <h2 id="verdict-text"></h2>
+        <p id="verdict-why" class="why"></p>
+        <p class="concept-line"><span id="concept-chip" class="chip"></span><span id="concept-note"></span></p>
+      </div>
+      <div class="compare">
+        <h3>What the others would have done</h3>
+        <div id="compare-grid" class="compare-grid"></div>
+      </div>
+      <div class="sheet-nav">
+        <span id="gate-note" class="gate-note"></span>
+        <button id="btn-retry-2">Retry this level</button>
+        <button id="btn-next" class="primary">Next level</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="levels.js"></script>
+  <script src="search.js"></script>
+  <script src="render.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

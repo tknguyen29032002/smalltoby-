@@ -3,10 +3,15 @@
  * campaign.js and shop.js are data; this is the proof that the data is a
  * campaign. It checks, and exits non-zero when any fails:
  *
- *   maps       every mapId exists in maps.js, in the right zone and tier,
- *              with exactly as many deliveries as the encounter asks for;
- *   ladder     the twelve powers unlock one per level in the agreed order,
- *              and each level's perfect line uses the power it hands over;
+ *   maps       every mapId exists in maps.js, once, in the right zone and
+ *              tier, with room for the deliveries (G cells, then $ pads) and
+ *              the encounter keeping the map's own fog and missing manifest;
+ *   ladder     all twelve powers unlock, once each; each arrives on a map
+ *              whose trap it answers (the map's own verified lesson, or the
+ *              cheapest single power on that level); the captain's anchors
+ *              hold (BFS first, Dijkstra on the first oil map, Bellman-Ford
+ *              on the first power-cell map, the wall follower in the racks);
+ *              each level's perfect line uses the power it hands over;
  *   solvable   every perfect line runs on the real engine: each leg is
  *              found, fits the memory cap, holds only powers the player has,
  *              respects the foreman's shield and the swap cap;
@@ -28,9 +33,7 @@
  *   node tools/verify-campaign.js --write   rewrite par and startCharge in
  *                                           campaign.js from the measurement
  *
- * Maps come from maps.js at the repo root. Until the map lane lands it, the
- * stand-ins in tools/fixtures/placeholder-maps.js are used, and the run says
- * so on its first line.
+ * Maps come from maps.js at the repo root, the one source of floor plans.
  */
 var fs = require('fs');
 var path = require('path');
@@ -40,21 +43,8 @@ var E = require(path.join(ROOT, 'search.js'));
 var C = require(path.join(ROOT, 'campaign.js'));
 var Shop = require(path.join(ROOT, 'shop.js'));
 
-/* The order the captain agreed, 2026-09-19: each power arrives on the level
- * whose trap it solves. */
-var AGREED_LADDER = ['bfs', 'dfs', 'dijkstra', 'astar', 'greedy', 'wastar',
-  'bibfs', 'iddfs', 'beam', 'bellman', 'flow', 'wall'];
-
 function loadMaps() {
-  var real = path.join(ROOT, 'maps.js');
-  if (fs.existsSync(real)) {
-    var m = require(real);
-    return { source: 'maps.js', maps: Array.isArray(m) ? m : m.MAPS };
-  }
-  return {
-    source: 'tools/fixtures/placeholder-maps.js (maps.js has not landed yet)',
-    maps: require(path.join(__dirname, 'fixtures', 'placeholder-maps.js')).MAPS
-  };
+  return require(path.join(ROOT, 'maps.js')).MAPS;
 }
 
 /* ------------------------------------------------------------ the model --- */
@@ -71,13 +61,15 @@ function rideOf(grid, trace) {
 }
 
 /* Plays a line on the still floor. Returns { ok, why, ticks, charge, swaps }. */
-function measure(enc, grid, legs) {
+function measure(enc, map, grid, legs) {
   var zone = C.ZONE_BY_KEY[enc.zone];
+  var cells = C.deliveryCellsOf(enc, map);
+  var memory = C.memoryOf(enc, map);
   var from = grid.start;
   var out = { ok: true, why: '', ticks: 0, charge: 0, swaps: 0, legs: [] };
   for (var n = 0; n < legs.length; n++) {
     var leg = legs[n];
-    var goal = grid.goals[leg.to];
+    var goal = cells[leg.to];
     if (!goal) { return fail(out, 'leg ' + (n + 1) + ' aims at delivery ' + leg.to + ', which the map does not have'); }
     if (leg.hits && leg.power === zone.bossShieldedFrom) {
       return fail(out, 'leg ' + (n + 1) + ': the foreman is proofed against ' + leg.power);
@@ -89,12 +81,12 @@ function measure(enc, grid, legs) {
     params.hideGoal = !!enc.prizeBehaviour.hidden;
     var trace = E.search(grid, leg.power, params);
     if (!trace.found) { return fail(out, 'leg ' + (n + 1) + ': ' + leg.power + ' finds no route'); }
-    if (enc.memoryCap !== null && trace.peakFrontier > enc.memoryCap) {
-      return fail(out, 'leg ' + (n + 1) + ': ' + leg.power + ' overheats (frontier ' + trace.peakFrontier + ' > cap ' + enc.memoryCap + ')');
+    if (memory !== null && trace.peakFrontier > memory) {
+      return fail(out, 'leg ' + (n + 1) + ': ' + leg.power + ' overheats (frontier ' + trace.peakFrontier + ' > memory ' + memory + ')');
     }
     var plots = 1 + (leg.hits || 0);
     var ride = rideOf(grid, trace);
-    var legCharge = C.plotCharge(trace) * plots + ride.charge;
+    var legCharge = C.plotCharge(trace, map) * plots + ride.charge;
     var legTicks = C.ECONOMY.plotTicks * plots + ride.ticks;
     out.charge += legCharge;
     out.ticks += legTicks;
@@ -109,7 +101,7 @@ function measure(enc, grid, legs) {
 function fail(out, why) { out.ok = false; out.why = why; return out; }
 
 function parFor(enc, measured) {
-  var slack = C.ECONOMY.parSlack + C.ECONOMY.parSlackPerBoss * C.bossesOf(enc);
+  var slack = C.ECONOMY.parSlack;
   var charge = Math.ceil(Math.max(measured.charge, 1) * slack);
   return {
     ticks: Math.ceil(measured.ticks * slack),
@@ -128,11 +120,12 @@ function orders(items) {
 }
 
 /* The best a player can do with one power and no swaps: every order of the
- * deliveries is tried, because a solo player picks their own order too. */
-function bestSolo(enc, grid, power) {
+ * deliveries is tried, because a solo player picks their own order too.
+ * `bare` prices the floor alone, as if no foreman held anything. */
+function bestSolo(enc, map, grid, power, bare) {
   var best = null;
   orders(enc.perfectLine.legs).forEach(function (legs) {
-    var m = measure(enc, grid, legs.map(function (l) { return { power: power, to: l.to, hits: l.hits }; }));
+    var m = measure(enc, map, grid, legs.map(function (l) { return { power: power, to: l.to, hits: bare ? 0 : l.hits }; }));
     if (m.ok && (!best || m.charge < best.charge || (m.charge === best.charge && m.ticks < best.ticks))) { best = m; }
   });
   return best;
@@ -143,7 +136,6 @@ function bestSolo(enc, grid, power) {
 function check(maps) {
   var problems = [];
   var rows = [];
-  var measured = {};
   var mapById = {};
   maps.forEach(function (m) {
     if (mapById[m.id]) { problems.push('maps: id ' + m.id + ' appears twice'); }
@@ -155,9 +147,11 @@ function check(maps) {
   // ladder and structure
   if (encs.length !== 15) { problems.push('ladder: ' + encs.length + ' encounters, want 15'); }
   var ladder = C.unlockOrder().map(function (u) { return u.power; });
-  if (ladder.join() !== AGREED_LADDER.join()) {
-    problems.push('ladder: unlock order is ' + ladder.join(' ') + ', agreed ' + AGREED_LADDER.join(' '));
-  }
+  ids.forEach(function (id) {
+    var n = ladder.filter(function (p) { return p === id; }).length;
+    if (n !== 1) { problems.push('ladder: ' + id + ' unlocks ' + n + ' times, want once'); }
+  });
+  checkAnchors(encs, mapById, problems);
   var seenMaps = {};
   encs.forEach(function (enc, i) {
     var tag = 'L' + enc.level + ' ';
@@ -167,8 +161,6 @@ function check(maps) {
     if (C.ZONES.indexOf(zone) !== Math.floor(i / 3)) { problems.push(tag + 'is in zone ' + enc.zone + ', the ladder puts it in ' + C.ZONES[Math.floor(i / 3)].key); }
     if (enc.tier !== zone.tier) { problems.push(tag + 'tier ' + enc.tier + ' but zone ' + zone.key + ' is tier ' + zone.tier); }
     if (enc.swapCap !== zone.swapCap) { problems.push(tag + 'swap cap ' + enc.swapCap + ', zone ' + zone.key + ' sets ' + zone.swapCap); }
-    if (enc.fog && !zone.fog) { problems.push(tag + 'is fogged in a zone that is lit'); }
-    if (enc.deliveries < 2 || enc.deliveries > 3) { problems.push(tag + 'has ' + enc.deliveries + ' deliveries, want 2-3'); }
     if (seenMaps[enc.mapId]) { problems.push(tag + 'reuses map ' + enc.mapId); }
     seenMaps[enc.mapId] = true;
     if (enc.unlocks && ids.indexOf(enc.unlocks) < 0) { problems.push(tag + 'unlocks unknown power ' + enc.unlocks); }
@@ -212,13 +204,19 @@ function check(maps) {
       problems.push(tag + 'map ' + map.id + ' is ' + map.zone + '/' + map.tier + ', encounter is ' + enc.zone + '/' + enc.tier);
     }
     var grid = E.parseGrid(map.ascii);
-    if (grid.goals.length !== enc.deliveries) {
-      problems.push(tag + 'map ' + map.id + ' has ' + grid.goals.length + ' deliveries, encounter wants ' + enc.deliveries);
+    var prizes = grid.goals.length;
+    var fits = enc.deliveries >= 2 && enc.deliveries <= 3 && enc.deliveries >= prizes;
+    if (!fits && !(prizes > 3 && enc.deliveries === prizes)) {
+      problems.push(tag + 'has ' + enc.deliveries + ' deliveries on a map with ' + prizes + ' prizes: want 2-3, or every prize when the map has more');
     }
+    if (C.deliveryCellsOf(enc, map).length !== enc.deliveries) {
+      problems.push(tag + 'map ' + map.id + ' has room for ' + C.deliveryCellsOf(enc, map).length + ' deliveries (G and $), encounter wants ' + enc.deliveries);
+    }
+    if (map.fog && !enc.fog) { problems.push(tag + 'lifts the fog map ' + map.id + ' is built around'); }
+    if (map.goalKnown === false && !enc.prizeBehaviour.hidden) { problems.push(tag + 'lists the prize map ' + map.id + ' hides'); }
 
     // solvable, and par
-    var m = measure(enc, grid, legs);
-    measured[enc.level] = m;
+    var m = measure(enc, map, grid, legs);
     if (!m.ok) { problems.push(tag + 'perfect line fails: ' + m.why); return; }
     var want = parFor(enc, m);
     if (m.ticks > enc.par.ticks || m.charge > enc.par.charge) {
@@ -230,14 +228,28 @@ function check(maps) {
     }
 
     // who else makes three stars here alone - counting the one power the
-    // shop may have sold a level early, so gold cannot buy a sweep
+    // shop may have sold a level early, when a perfect player could have
+    // afforded it by now, so gold cannot buy a sweep
     var solos = [];
-    var early = C.unlockOrder().filter(function (u) { return u.level === enc.level + 1; })[0];
-    have.concat(early ? [early.power] : []).forEach(function (p) {
-      var s = bestSolo(enc, grid, p);
+    var early = Shop.shelf(enc.level, { gold: 0, earlyUnlocked: [] }).power;
+    var affordable = early && goldBefore(enc.level) >= early.earlyPrice;
+    have.concat(affordable ? [early.id] : []).forEach(function (p) {
+      var s = bestSolo(enc, map, grid, p);
       if (s && s.ticks <= enc.par.ticks && s.charge <= enc.par.charge) { solos.push(p); }
     });
     rows.push({ enc: enc, m: m, want: want, solos: solos, grid: grid });
+
+    // the power it hands over answers this map's trap: priced on the floor
+    // alone, because the foremen are a fight, not the map's lesson
+    if (enc.unlocks) {
+      var mine = bestSolo(enc, map, grid, enc.unlocks, true);
+      var cheapest = have.map(function (p) { return bestSolo(enc, map, grid, p, true); })
+        .filter(Boolean).reduce(function (a, b) { return !a || b.charge < a.charge ? b : a; }, null);
+      var lesson = map.expect && map.expect[enc.unlocks] === 3;
+      if (!lesson && !(mine && cheapest && mine.charge <= cheapest.charge)) {
+        problems.push(tag + 'hands over ' + enc.unlocks + ', which neither wins map ' + map.id + '\'s own lesson nor is the cheapest power here');
+      }
+    }
   });
 
   // no single power sweeps a zone
@@ -264,6 +276,30 @@ function check(maps) {
 
   problems = problems.concat(checkEconomy());
   return { problems: problems, rows: rows };
+}
+
+/* Gold a three-star player holds before a level, lockboxes aside. */
+function goldBefore(level) {
+  return C.ENCOUNTERS.filter(function (e) { return e.level < level; }).reduce(function (g, e) {
+    return g + C.goldFor(e, { won: true, ticks: 0, chargeSpent: 0 });
+  }, 0);
+}
+
+/* The captain's anchors for the unlock ladder (2026-09-19). */
+function checkAnchors(encs, mapById, problems) {
+  function first(test) {
+    return encs.filter(function (e) { return mapById[e.mapId] && test(mapById[e.mapId]); })[0];
+  }
+  function expectAt(power, enc, why) {
+    if (!enc || enc.unlocks !== power) {
+      problems.push('ladder: ' + power + ' should unlock on ' + why + (enc ? ' (L' + enc.level + ')' : '') + ', it unlocks on L' + C.unlockLevelOf(power));
+    }
+  }
+  expectAt('bfs', encs[0], 'the first level');
+  expectAt('dijkstra', first(function (m) { return m.ascii.indexOf('~') >= 0; }), 'the first oil map');
+  expectAt('bellman', first(function (m) { return m.ascii.indexOf('v') >= 0; }), 'the first power-cell map');
+  var wall = C.encounter(C.unlockLevelOf('wall'));
+  if (!wall || wall.zone !== 'racks') { problems.push('ladder: the wall follower should unlock in the racks'); }
 }
 
 function checkEconomy() {
@@ -329,21 +365,19 @@ function writePars(rows) {
 function pad(s, n) { s = String(s); while (s.length < n) { s += ' '; } return s; }
 
 if (require.main === module) {
-  var loaded = loadMaps();
-  console.log('maps: ' + loaded.source);
-  var result = check(loaded.maps);
+  var result = check(loadMaps());
   if (process.argv.indexOf('--write') >= 0) {
     writePars(result.rows.filter(function (r) { return r.m.ok; }));
     console.log('wrote par and startCharge for ' + result.rows.length + ' levels; run again to check');
     process.exit(0);
   }
   console.log('');
-  console.log(pad('lvl', 4) + pad('map', 14) + pad('unlocks', 9) + pad('bots b/f/B', 11) + pad('diff', 5) +
+  console.log(pad('lvl', 4) + pad('map', 24) + pad('unlocks', 9) + pad('bots b/f/B', 11) + pad('diff', 5) +
     pad('line', 26) + pad('measured', 10) + pad('par', 10) + pad('start', 6) + 'three stars solo');
   result.rows.forEach(function (r) {
     var e = r.enc;
     var n = function (t) { return e.bots.filter(function (b) { return b.type === t; }).reduce(function (s, b) { return s + b.count; }, 0); };
-    console.log(pad(e.level, 4) + pad(e.mapId, 14) + pad(e.unlocks || '-', 9) +
+    console.log(pad(e.level, 4) + pad(e.mapId, 24) + pad(e.unlocks || '-', 9) +
       pad(n('basic') + '/' + n('fast') + '/' + n('boss'), 11) + pad(C.difficultyOf(e), 5) +
       pad(e.perfectLine.legs.map(function (l) { return l.power; }).join(','), 26) +
       pad(r.m.ticks + 't/' + r.m.charge + 'c', 10) + pad(e.par.ticks + 't/' + e.par.charge + 'c', 10) +
@@ -361,4 +395,4 @@ if (require.main === module) {
   console.log('ok: maps, ladder, solvable, par, no sweep, curve, economy');
 }
 
-module.exports = { check: check, loadMaps: loadMaps, measure: measure, AGREED_LADDER: AGREED_LADDER };
+module.exports = { check: check, loadMaps: loadMaps, measure: measure };

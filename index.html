@@ -3,51 +3,58 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pathfinder Dispatch</title>
+  <title>Factory Heist</title>
   <!-- inline favicon: keeps file:// and localhost consoles free of a 404 -->
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2311141d'/%3E%3Crect x='2' y='2' width='4' height='4' fill='%2327ae72'/%3E%3Crect x='10' y='10' width='4' height='4' fill='%23e8503a'/%3E%3Cpath d='M4 4 L12 4 L12 12' stroke='%23ff5d73' stroke-width='2' fill='none'/%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2310141b'/%3E%3Crect x='2' y='7' width='5' height='5' fill='%235c6877'/%3E%3Crect x='9' y='4' width='5' height='8' fill='%23ffc21f'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
+<body class="heist">
   <!-- The map is the screen. Everything else floats over it. -->
-  <canvas id="map" role="img" aria-label="Isometric map of the level. The mission, budgets and result are given as text around it."></canvas>
+  <canvas id="board" role="img" aria-label="The factory floor, seen isometrically. The mission, the charge bar and the result are given as text around it."></canvas>
 
   <div class="hud">
     <div class="hud-top">
       <div class="mission">
         <div class="mission-line">
-          <span id="level-progress" class="chapter"></span>
-          <h1 id="level-title"></h1>
+          <span id="floor-progress" class="chapter"></span>
+          <h1 id="floor-title"></h1>
           <span id="star-total" class="star-total"></span>
         </div>
-        <p id="objective" class="objective"></p>
-        <p id="level-brief" class="brief"></p>
+        <p id="floor-objective" class="objective"></p>
+        <p id="floor-brief" class="brief"></p>
       </div>
 
       <div class="readouts">
-        <div id="budgets" class="budgets"></div>
-        <div id="legend" class="legend"></div>
+        <div id="gauges" class="budgets"></div>
+        <div class="legend" id="legend"></div>
       </div>
     </div>
 
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
     <div class="hud-bottom">
-      <div id="algos" class="algos"></div>
+      <div id="powers" class="algos powers"></div>
+      <div id="boosts" class="boosts hidden"></div>
+      <p id="mode-line" class="mode-line"></p>
       <div class="transport">
-        <button id="btn-play" class="primary" disabled>Play</button>
-        <button id="btn-step" disabled>Step</button>
-        <label class="speed">Speed<input id="speed" type="range" min="1" max="30" value="4" /></label>
-        <label id="weight-box" class="speed hidden">Weight <b id="weight-val">1.0</b><input id="weight" type="range" min="10" max="50" value="10" /></label>
-        <button id="btn-retry" disabled>Retry</button>
-        <span class="keyhint">space play &middot; &rarr; step &middot; drag pan &middot; scroll zoom &middot; F fit</span>
+        <button id="btn-rot-left" title="Turn the floor left (Q)" aria-label="Turn left">&#8630; Q</button>
+        <button id="btn-rot-right" title="Turn the floor right (E)" aria-label="Turn right">E &#8631;</button>
+        <button id="btn-fit" title="Whole floor / follow the cart (F)">Overview</button>
+        <button id="btn-retry" title="Restart this floor (R)">Restart</button>
+        <label class="speed" title="How fast a search animates">Search speed<input id="speed" type="range" min="1" max="30" value="12" /></label>
+        <label class="toggle" title="Debug: WASD walks the cart for free and no stars are kept"><input id="freewalk" type="checkbox" /> free-walk (debug)</label>
+        <span class="sep"></span>
+        <div id="floorbar" class="levelbar"></div>
+        <a class="link" href="training.html">Training &rarr;</a>
       </div>
-      <div id="levelbar" class="levelbar"></div>
+      <p class="keyhint">1-9 0 - = pick a power (mid-search: hot swap) &middot; click a delivery to plot a route there &middot; T wait &middot; Esc get off &middot; WASD nudge (costs charge) &middot; Q/E turn &middot; drag pan &middot; scroll zoom &middot; F overview</p>
     </div>
   </div>
 
-  <!-- Glossary card for the algorithm under the pointer, built from the registry. -->
+  <!-- Card for the power under the pointer, built from the engine registry. -->
   <div id="glossary" class="glossary hidden" role="tooltip"></div>
 
-  <!-- Verdict and compare, over the map, dismissed with a click. -->
+  <!-- Verdict, over the floor, dismissed with a click. -->
   <div id="overlay" class="overlay hidden">
     <div class="sheet">
       <button id="overlay-close" class="close" aria-label="Dismiss">&times;</button>
@@ -58,20 +65,25 @@
         <p class="concept-line"><span id="concept-chip" class="chip"></span><span id="concept-note"></span></p>
       </div>
       <div class="compare">
-        <h3>What the others would have done</h3>
-        <div id="compare-grid" class="compare-grid"></div>
+        <h3>The run</h3>
+        <div id="run-grid" class="run-grid"></div>
       </div>
+      <div id="shop" class="shop"></div>
       <div class="sheet-nav">
         <span id="gate-note" class="gate-note"></span>
-        <button id="btn-retry-2">Retry this level</button>
-        <button id="btn-next" class="primary">Next level</button>
+        <button id="btn-retry-2">Run it again</button>
+        <button id="btn-next" class="primary">Next floor</button>
       </div>
     </div>
   </div>
 
-  <script src="levels.js"></script>
   <script src="search.js"></script>
-  <script src="render.js"></script>
-  <script src="game.js"></script>
+  <script src="sprites.js"></script>
+  <script src="maps.js"></script>
+  <script src="campaign.js"></script>
+  <script src="shop.js"></script>
+  <script src="heist.js"></script>
+  <script src="heist-render.js"></script>
+  <script src="heist-ui.js"></script>
 </body>
 </html>
