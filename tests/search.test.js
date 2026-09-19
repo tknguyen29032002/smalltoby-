@@ -231,53 +231,35 @@ test('greedy best-first is non-optimal on a map that punishes the heuristic', fu
     'A* must stay optimal on the same map - it is the foil greedy is measured against');
 });
 
-test('weighted A* expands no more as the weight rises', function (t) {
-  var probe = weightedProbe();
-  if (!probe) { return t.skip('no weighted A* strategy (or no weight knob) in the registry yet'); }
-  var map = fixtures.MAPS.openField;
+// Weighted A* is the dial between Dijkstra and Greedy. Expansions do not fall
+// monotonically as w rises on every map (walls go 36, 37, 47 from w = 1 to 2),
+// so the claims are the ones the registry makes: w = 0 and w = 1 stay optimal,
+// any w costs at most w times the best, and on open weighted ground a heavier
+// hand does think less.
+test('weighted A* is optimal at w <= 1 and within w times the best above it', function () {
+  assert.ok(h.has('wastar'), 'the registry must carry wastar');
+  fixtures.ALL.forEach(function (map) {
+    var best = h.refBestCost(map.ascii);
+    [0, 1, 1.5, 2, 5].forEach(function (w) {
+      var res = h.run(map.ascii, 'wastar', { weight: w });
+      assertTraceInvariants(map, 'wastar', res);
+      assert.equal(res.trace.found, true, 'weighted A* (w=' + w + ') failed on ' + map.name);
+      if (w <= 1) {
+        assert.equal(res.trace.pathCost, best, 'weighted A* at w=' + w + ' must be optimal on ' + map.name);
+      } else {
+        assert.ok(res.trace.pathCost <= w * best,
+          'weighted A* at w=' + w + ' cost ' + res.trace.pathCost + ', over ' + w + ' x ' + best + ' on ' + map.name);
+      }
+    });
+  });
   var previous = Infinity;
-  probe.weights.forEach(function (w) {
-    var trace = probe.run(map.ascii, w);
-    assert.equal(trace.found, true, 'weighted A* (w=' + w + ') must reach the goal on an open map');
-    assert.ok(trace.expansions <= previous,
-      'expansions rose from ' + previous + ' to ' + trace.expansions + ' when the weight rose to ' + w);
+  [0, 1, 1.5, 2, 5].forEach(function (w) {
+    var trace = h.run(fixtures.MAPS.swampBand.ascii, 'wastar', { weight: w }).trace;
+    assert.ok(trace.expansions < previous,
+      'on the swamp band expansions rose from ' + previous + ' to ' + trace.expansions + ' at w=' + w);
     previous = trace.expansions;
   });
 });
-
-// Weighted A* can arrive either as one id with a weight option or as a set of
-// ids carrying the weight in the name. Support both, skip if neither is there.
-function weightedProbe() {
-  var byOption = h.OPTIONAL.weighted;
-  if (byOption) {
-    var weights = [1, 1.5, 2, 5];
-    try {
-      var baseline = h.run(fixtures.MAPS.openField.ascii, byOption, { weight: 1 }).trace;
-      var heavy = h.run(fixtures.MAPS.openField.ascii, byOption, { weight: 5 }).trace;
-      if (baseline.expansions !== heavy.expansions) {
-        return {
-          weights: weights,
-          run: function (ascii, w) { return h.run(ascii, byOption, { weight: w }).trace; }
-        };
-      }
-    } catch (err) { /* fall through to the id-per-weight shape */ }
-  }
-
-  var numbered = h.STRATEGY_IDS.filter(function (id) { return /weight/i.test(id) && /\d/.test(id); });
-  if (numbered.length >= 2) {
-    var parsed = numbered.map(function (id) {
-      return { id: id, w: parseFloat(id.replace(/[^0-9.]/g, '')) };
-    }).sort(function (a, b) { return a.w - b.w; });
-    return {
-      weights: parsed.map(function (p) { return p.w; }),
-      run: function (ascii, w) {
-        var hit = parsed.filter(function (p) { return p.w === w; })[0];
-        return h.run(ascii, hit.id).trace;
-      }
-    };
-  }
-  return null;
-}
 
 test('bidirectional search returns a valid, optimal path', function (t) {
   var id = h.OPTIONAL.bidirectional;

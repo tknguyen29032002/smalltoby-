@@ -173,8 +173,11 @@ var HeistBoard = (function () {
     insets = insets || {};
     var p = screenOf(board, state.grid, state.player.x, state.player.y, 0);
     var marginX = viewW * 0.28;
-    var top = (insets.top || 0) + viewH * 0.12;
     var bottom = viewH - (insets.bottom || 0) - viewH * 0.12;
+    // The pointer floats about 40 tile units over the cart; keep all of it
+    // below the readouts, or it sits under the legend text.
+    var top = Math.min(bottom, Math.max((insets.top || 0) + viewH * 0.12,
+      board.covered.top + 40 * board.cam.scale));
     var dx = 0;
     var dy = 0;
     if (p.x < marginX) { dx = marginX - p.x; }

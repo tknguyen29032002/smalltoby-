@@ -98,6 +98,11 @@
     }
 
     const st = H.ui.state;
+    // The play framing keeps the cart's pointer (about 38 tile units over the
+    // cart) clear of the readouts, and the brief counts its thieves in English.
+    const pp = H.board.screenOf(st, st.player.x, st.player.y, 0);
+    if (pp.y - 38 * H.board.cam.scale < H.board.covered.top) { problems.push(at + 'the cart pointer starts under the readouts'); }
+    if (/foremans/.test($('floor-brief').textContent)) { problems.push(at + 'the brief says "foremans"'); }
     for (let n = 0; n < enc.perfectLine.legs.length && st.status === 'playing'; n++) {
       const leg = enc.perfectLine.legs[n];
       const d = st.deliveries[leg.to];
