@@ -14,6 +14,8 @@ A level only teaches if its intended algorithm is the one that earns three stars
 
 The engine has one loop, not two: `search()` is `runSearch(createSearch(...))`, and hot swap works only because every priority/queue/stack strategy shares that state. Strategies with their own shape are marked `hotSwappable: false` in the registry. When touching the loop, prove the original four strategies are untouched by diffing their traces against the previous `search.js` - the shipped levels are tuned to the exact expansion order.
 
+The art has one author: `sprites.js` defines every sprite as a small 3D model, and the SVG sheets under `docs/art/sprites/` are generated from it by `node tools/render-sprites.js` - never hand-edited. The rules are in `docs/art/ART.md`, whose roster table is held as data by `tests/sprites.test.js` (alongside palette closure and the rotation claims), so a sprite edit ships with a regenerated sheet and an updated row. Judge any art change by eye in `docs/art/concept.html`, which draws the whole kit from the shipped `sprites.js`.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
