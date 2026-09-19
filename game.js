@@ -117,14 +117,22 @@ function whySentence(level, algo, trace, refs) {
     return name + ' peaked at ' + b.used + ' frontier cells against a budget of ' + b.limit + '.';
   }
 
-  // Three stars: teach by contrast with whichever rival worked hardest.
-  var rival = ALGOS.filter(function (a) { return a !== algo; }).reduce(function (acc, a) {
-    return state.traces[a].expansions > state.traces[acc].expansions ? a : acc;
+  // Three stars: teach by contrast with whichever rival worked hardest for the
+  // SAME answer. A rival that missed the objective did not get the same answer,
+  // so it cannot carry this sentence - on the levels DFS or BFS is designed to
+  // fail, claiming it would have is the opposite of the lesson.
+  var peers = ALGOS.filter(function (a) {
+    return a !== algo && objectiveMet(level, state.traces[a], refs);
   });
-  var rivalTrace = state.traces[rival];
-  if (rivalTrace.expansions > trace.expansions * 1.2) {
-    return 'On this map ' + ALGO_NAMES[rival] + ' would have spent ' + rivalTrace.expansions +
-      ' expansions to get the same answer, and ' + name + ' needed only ' + trace.expansions + '.';
+  if (peers.length > 0) {
+    var rival = peers.reduce(function (acc, a) {
+      return state.traces[a].expansions > state.traces[acc].expansions ? a : acc;
+    });
+    var rivalTrace = state.traces[rival];
+    if (rivalTrace.expansions > trace.expansions * 1.2) {
+      return 'On this map ' + ALGO_NAMES[rival] + ' would have spent ' + rivalTrace.expansions +
+        ' expansions to get the same answer, and ' + name + ' needed only ' + trace.expansions + '.';
+    }
   }
   if (level.objective === 'any') {
     return 'Reaching the goal was never the hard part here - holding the search in memory was, and ' +
@@ -213,6 +221,9 @@ function setBar(barEl, countEl, limitEl, used, limit) {
     limitEl.textContent = 'n/a';
     countEl.textContent = used;
     barEl.style.width = '0%';
+    // A budget that does not apply cannot be over: without this, the red from
+    // the previous level's breach rides along on a bar with no limit.
+    barEl.classList.remove('over');
     return;
   }
   box.classList.remove('off');

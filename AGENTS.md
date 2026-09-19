@@ -8,7 +8,11 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 Plain HTML/CSS/JS game, no build step and no dependencies: `index.html` must keep working when opened straight from disk over `file://`, so no `fetch()` of local files, no ES modules, and nothing from a CDN. See the README for the file-by-file map and the two local run paths.
 
-The five levels only teach if each one's intended algorithm is the one that earns three stars. Budgets in `levels.js` are tuned to that, and the tuning is checkable: run `node tools/verify-levels.js` after touching `levels.js`, `search.js`, or the scoring in `game.js`. It exits non-zero when a level stops matching the design table.
+The levels only teach if each one's intended algorithm is the one that earns three stars.
+Budgets in `levels.js` are tuned to that, and the tuning is checkable: `npm test` runs the node suite in `tests/` (search invariants plus the level contract, which holds README's level table as data), and `node tools/verify-levels.js` prints the same table for a human.
+Run both after touching `levels.js`, `search.js`, or the scoring in `game.js`; a new level ships with its README row and its row in `tests/levels.test.js`.
+
+`npm test` cannot see the page. After touching `index.html`, `game.js`, or `render.js`, also run the browser walkthrough in `tests/browser/walkthrough.js` - its header has the commands - over both `file://` and `http://`; the two runs must report the same digest and no problems.
 
 ## Maintaining this file
 
