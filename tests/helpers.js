@@ -90,7 +90,6 @@ function findId(pattern) {
 // lane that adds them picks the id.
 var OPTIONAL = {
   greedy: findId(/greedy|best[-_]?first/i),
-  weighted: findId(/^w(eighted)?[-_]?a?\*?star|weighted/i),
   bidirectional: findId(/^bi|bidir/i)
 };
 

@@ -128,7 +128,10 @@
     return s ? s.label : id;
   }
 
-  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+  // "foreman" is the one irregular noun the HUD counts.
+  function plural(n, word) {
+    return n + ' ' + (n === 1 ? word : (/man$/.test(word) ? word.replace(/man$/, 'men') : word + 's'));
+  }
 
   /* ---------------------------------------------------------------- floors ---*/
 
