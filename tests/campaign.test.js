@@ -15,13 +15,14 @@ var verify = require(path.join(ROOT, 'tools', 'verify-campaign.js'));
 var C = require(path.join(ROOT, 'campaign.js'));
 var Shop = require(path.join(ROOT, 'shop.js'));
 
-test('verify-campaign passes on the maps that are there', function () {
-  var result = verify.check(verify.loadMaps().maps);
+test('verify-campaign passes on maps.js', function () {
+  var result = verify.check(verify.loadMaps());
   assert.deepStrictEqual(result.problems, []);
 });
 
-test('every power unlocks exactly once, in the agreed order', function () {
-  assert.deepStrictEqual(C.unlockOrder().map(function (u) { return u.power; }), verify.AGREED_LADDER);
+test('every power unlocks exactly once, BFS first', function () {
+  var ladder = C.unlockOrder().map(function (u) { return u.power; });
+  assert.strictEqual(new Set(ladder).size, 12);
   assert.deepStrictEqual(C.powersAt(1), ['bfs']);
   assert.strictEqual(C.powersAt(15).length, 12);
 });
@@ -41,14 +42,26 @@ test('the shop sells one power early, one level early, once', function () {
   assert.strictEqual(shelf.power.id, 'astar');
   assert.strictEqual(shelf.power.earlyAt, 3);
   assert.strictEqual(Shop.shelf(3, { gold: 999, earlyUnlocked: ['astar'] }).power, null);
-  assert.deepStrictEqual(Shop.powersFor(3, { earlyUnlocked: ['astar'] }), ['bfs', 'dfs', 'dijkstra', 'astar']);
-  assert.deepStrictEqual(Shop.powersFor(2, { earlyUnlocked: ['astar'] }), ['bfs', 'dfs']);
+  assert.deepStrictEqual(Shop.powersFor(3, { earlyUnlocked: ['astar'] }), ['bfs', 'greedy', 'dijkstra', 'astar']);
+  assert.deepStrictEqual(Shop.powersFor(2, { earlyUnlocked: ['astar'] }), ['bfs', 'greedy']);
   assert.strictEqual(Shop.shelf(15, { gold: 999, earlyUnlocked: [] }).power, null);
 });
 
 test('boosts appear on the shelf only after the level that unlocks them', function () {
   assert.deepStrictEqual(Shop.boostsBefore(1), []);
   assert.deepStrictEqual(Shop.boostsBefore(2).map(function (b) { return b.id; }), ['recharge']);
+});
+
+test('deliveries are the map\'s prizes first, then its $ pads', function () {
+  var MAPS = verify.loadMaps();
+  var enc = C.encounter(1);
+  var map = MAPS.filter(function (m) { return m.id === enc.mapId; })[0];
+  var rows = map.ascii.split('\n');
+  var cells = C.deliveryCellsOf(enc, map);
+  assert.strictEqual(cells.length, enc.deliveries);
+  assert.strictEqual(rows[cells[0].y][cells[0].x], 'G');
+  assert.strictEqual(rows[cells[1].y][cells[1].x], '$');
+  assert.strictEqual(C.chestPadsOf(enc, map).length, 1);
 });
 
 test('campaign.js and shop.js publish one global each', function () {

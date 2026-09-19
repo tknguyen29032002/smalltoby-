@@ -26,6 +26,7 @@
   th { color: var(--dim); font-weight: 600; font-size: 12px; }
   tr:last-child td { border-bottom: 0; }
   td.wrap { white-space: normal; min-width: 200px; color: var(--dim); }
+  .sub { color: var(--dim); font-size: 12px; }
   .hp { color: var(--dim); font-size: 12px; margin-top: 3px; }
   td.line { white-space: normal; min-width: 200px; }
   .diff { display: flex; align-items: center; gap: 8px; }
@@ -50,7 +51,7 @@
 <body>
 <main>
   <h1>Factory Heist - the campaign</h1>
-  <p class="lede">Fifteen encounters in five zones. The cart rides the route a power finds; a level is won by standing on every delivery and lost when charge hits zero. Par comes from the perfect line, measured on the real engine by <code>tools/verify-campaign.js</code>.</p>
+  <p class="lede">Fifteen encounters on the fifteen maps of <code>maps.js</code>. The cart rides the route a power finds; a level is won by standing on every delivery and lost when charge hits zero. <i>think</i> is how many expansions a plot gets free, <i>memory</i> the frontier it may hold. Par comes from the perfect line, measured on the real engine by <code>tools/verify-campaign.js</code>.</p>
   <div class="legend">
     <span><i class="bot basic"></i> hauler bot</span>
     <span><i class="bot fast"></i> scout</span>
@@ -73,6 +74,7 @@
     </div>
   </div>
 </main>
+<script src="../../maps.js"></script>
 <script src="../../campaign.js"></script>
 <script src="../../shop.js"></script>
 <script>
@@ -94,7 +96,7 @@
 
   var maxD = Math.max.apply(null, C.ENCOUNTERS.map(C.difficultyOf));
   var ladder = document.getElementById('ladder');
-  row(ladder, ['#', 'Level', 'Map', 'Power', 'Thieves', 'Deliveries', 'Rules', 'Par', 'Start charge', 'Difficulty', 'Perfect line'], true);
+  row(ladder, ['#', 'Level', 'Power', 'Thieves', 'Deliveries', 'Rules', 'Par', 'Start charge', 'Difficulty', 'Perfect line'], true);
   var zone = null;
   C.ENCOUNTERS.forEach(function (e) {
     if (e.zone !== zone) {
@@ -102,7 +104,7 @@
       var z = C.ZONE_BY_KEY[zone];
       var tr = el('tr', '', 'zone-row');
       var td = el('td', esc(z.name) + ' &middot; tier ' + z.tier + (z.bossShieldedFrom ? ' &middot; foremen proofed against ' + esc(z.bossShieldedFrom) : '') + ' &middot; ' + esc(z.tightens));
-      td.colSpan = 11;
+      td.colSpan = 10;
       tr.appendChild(td);
       ladder.appendChild(tr);
     }
@@ -112,13 +114,14 @@
     var rules = [];
     if (e.fog) { rules.push('fog'); }
     if (e.prizeBehaviour.hidden) { rules.push('no manifest'); }
-    if (e.memoryCap !== null) { rules.push('memory ' + e.memoryCap); }
+    var map = MAPS.filter(function (m) { return m.id === e.mapId; })[0];
+    if (map.budgets.expansions !== undefined) { rules.push('think ' + map.budgets.expansions); }
+    if (C.memoryOf(e, map) !== null) { rules.push('memory ' + C.memoryOf(e, map)); }
     rules.push(e.swapCap + ' swaps');
     var line = e.perfectLine.legs.map(function (l) { return esc(l.power) + (l.hits ? ' <span class="flag">+' + l.hits + ' hits</span>' : ''); }).join(' &rarr; ');
     row(ladder, [
       { html: String(e.level), cls: 'num' },
-      { html: '<b>' + esc(e.name) + '</b>' },
-      e.mapId,
+      { html: '<b>' + esc(e.name) + '</b><div class="sub">' + esc(e.mapId) + '</div>' },
       { html: e.unlocks ? '<span class="pill new">' + esc(e.unlocks) + '</span>' : '<span class="pill">revision</span>' },
       { html: '<div class="bots">' + dots + '</div>' + boss },
       { html: String(e.deliveries), cls: 'num' },
