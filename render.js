@@ -1,158 +1,306 @@
-/* render.js - draws one frame of a trace onto a canvas.
+/* render.js - isometric board renderer.
  *
- * drawFrame(canvas, grid, trace, index, opts)
- *   index = how many expansions have happened. index >= trace.steps.length
- *   means the run is over, so the final path is drawn on top.
+ * The map is the screen: one full-viewport canvas, a camera you can pan and
+ * zoom, and tiles with height so the world reads as a place rather than a
+ * spreadsheet. Plain 2D canvas calls only - no WebGL, no dependencies, works
+ * from file://.
+ *
+ *   createCamera()                        -> {x, y, scale}
+ *   fitCamera(cam, grid, w, h, pad)       -> camera that frames the level
+ *   drawScene(canvas, grid, trace, i, cam, opts)
+ *   screenToCell(cam, grid, sx, sy)       -> {x, y} or null
+ *
+ * opts:
+ *   breachAt   index after which the run is over budget (tiles go red)
+ *   cursor     true to mark the cell expanded on this step
+ *   teleports  [{a:{x,y}, b:{x,y}}] drawn as linked pads (level 6)
+ *   sides      map of cell index -> 0|1, colours a bidirectional frontier
+ *   frontierOver  true once the frontier has passed the memory budget
+ *   dim        0..1, fades the whole board (used behind overlays)
  */
+
+var TILE_W = 32;
+var TILE_H = 16;
+var WALL_H = 8;
+var SWAMP_SINK = 7;
+var FRONTIER_LIFT = 6;
+var RIBBON_H = 12;
 
 var COLORS = {
   grass: '#e9e4d6',
   swamp: '#7fa070',
-  wall: '#39405a',
-  grid: 'rgba(0,0,0,0.07)',
-  exploredEarly: '#e6efff',
-  exploredLate: '#3a61ad',
+  wall: '#4a5273',
+  exploredEarly: '#eef4ff',
+  exploredLate: '#4f7bc9',
+  exploredBust: '#e8503a',
   frontier: '#ffc94d',
+  frontierB: '#59d0ff',
   path: '#ff5d73',
   start: '#27ae72',
-  goal: '#e8503a'
+  goal: '#e8503a',
+  teleport: '#b07cff'
 };
 
+/* ---------- colour helpers ---------- */
+
+function hex2(v) { return ('0' + Math.round(v).toString(16)).slice(-2); }
+
+// Returns hex, so results can be fed back into mixColor or shade.
 function mixColor(a, b, t) {
-  function part(hex, at) { return parseInt(hex.substr(at, 2), 16); }
-  var r = Math.round(part(a, 1) + (part(b, 1) - part(a, 1)) * t);
-  var g = Math.round(part(a, 3) + (part(b, 3) - part(a, 3)) * t);
-  var bl = Math.round(part(a, 5) + (part(b, 5) - part(a, 5)) * t);
-  return 'rgb(' + r + ',' + g + ',' + bl + ')';
+  function p(h, i) { return parseInt(h.substr(i, 2), 16); }
+  return '#' + hex2(p(a, 1) + (p(b, 1) - p(a, 1)) * t) +
+    hex2(p(a, 3) + (p(b, 3) - p(a, 3)) * t) +
+    hex2(p(a, 5) + (p(b, 5) - p(a, 5)) * t);
 }
 
-function layoutFor(canvas, grid) {
-  var cell = Math.floor(Math.min(canvas.width / grid.w, canvas.height / grid.h));
-  cell = Math.max(cell, 1);
-  return {
-    cell: cell,
-    ox: Math.floor((canvas.width - cell * grid.w) / 2),
-    oy: Math.floor((canvas.height - cell * grid.h) / 2)
-  };
+function shade(hex, f) {
+  return mixColor('#000000', hex, f);
 }
 
-function drawFrame(canvas, grid, trace, index, opts) {
+/* ---------- camera ---------- */
+
+function createCamera() {
+  return { x: 0, y: 0, scale: 1 };
+}
+
+// Frame the whole level with a little air around it.
+function fitCamera(cam, grid, viewW, viewH, pad) {
+  pad = pad === undefined ? 40 : pad;
+  var spanW = (grid.w + grid.h) * TILE_W / 2;
+  var spanH = (grid.w + grid.h) * TILE_H / 2 + WALL_H + RIBBON_H;
+  var scale = Math.min((viewW - pad * 2) / spanW, (viewH - pad * 2) / spanH);
+  cam.scale = Math.max(0.25, Math.min(3.4, scale));
+  // World origin sits at the top corner of the diamond.
+  cam.x = viewW / 2 + (grid.h - grid.w) * TILE_W / 4 * cam.scale;
+  cam.y = viewH / 2 - (grid.w + grid.h) * TILE_H / 4 * cam.scale;
+  return cam;
+}
+
+function worldOf(x, y, z) {
+  return { x: (x - y) * TILE_W / 2, y: (x + y) * TILE_H / 2 - z };
+}
+
+// Inverse projection onto the ground plane, for hover and click.
+function screenToCell(cam, grid, sx, sy) {
+  var wx = (sx - cam.x) / cam.scale;
+  var wy = (sy - cam.y) / cam.scale;
+  var x = Math.floor((wx / (TILE_W / 2) + wy / (TILE_H / 2)) / 2);
+  var y = Math.floor((wy / (TILE_H / 2) - wx / (TILE_W / 2)) / 2);
+  if (x < 0 || y < 0 || x >= grid.w || y >= grid.h) { return null; }
+  return { x: x, y: y };
+}
+
+/* ---------- tiles ---------- */
+
+function tileTop(ctx, wx, wy) {
+  ctx.beginPath();
+  ctx.moveTo(wx, wy);
+  ctx.lineTo(wx + TILE_W / 2, wy + TILE_H / 2);
+  ctx.lineTo(wx, wy + TILE_H);
+  ctx.lineTo(wx - TILE_W / 2, wy + TILE_H / 2);
+  ctx.closePath();
+}
+
+function drawTile(ctx, x, y, z, color, depth, outline) {
+  var w = worldOf(x, y, z);
+
+  if (depth > 0) {
+    ctx.fillStyle = shade(color, 0.6);
+    ctx.beginPath();
+    ctx.moveTo(w.x - TILE_W / 2, w.y + TILE_H / 2);
+    ctx.lineTo(w.x, w.y + TILE_H);
+    ctx.lineTo(w.x, w.y + TILE_H + depth);
+    ctx.lineTo(w.x - TILE_W / 2, w.y + TILE_H / 2 + depth);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = shade(color, 0.42);
+    ctx.beginPath();
+    ctx.moveTo(w.x + TILE_W / 2, w.y + TILE_H / 2);
+    ctx.lineTo(w.x, w.y + TILE_H);
+    ctx.lineTo(w.x, w.y + TILE_H + depth);
+    ctx.lineTo(w.x + TILE_W / 2, w.y + TILE_H / 2 + depth);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.fillStyle = color;
+  tileTop(ctx, w.x, w.y);
+  ctx.fill();
+  if (outline !== false) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.16)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  return w;
+}
+
+/* ---------- scene ---------- */
+
+function drawScene(canvas, grid, trace, index, cam, opts) {
   opts = opts || {};
   var ctx = canvas.getContext('2d');
-  var lay = layoutFor(canvas, grid);
-  var cell = lay.cell;
-  var small = cell < 10;
+  var dpr = canvas._dpr || 1;
+  var cssW = canvas.width / dpr;
+  var cssH = canvas.height / dpr;
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
 
-  // terrain
-  for (var y = 0; y < grid.h; y++) {
-    for (var x = 0; x < grid.w; x++) {
+  ctx.save();
+  ctx.setTransform(dpr * cam.scale, 0, 0, dpr * cam.scale, dpr * cam.x, dpr * cam.y);
+  if (opts.dim) { ctx.globalAlpha = 1 - opts.dim; }
+
+  var last = trace ? Math.min(index, trace.steps.length) : 0;
+  var order = {};
+  var i;
+  for (i = 0; i < last; i++) { order[trace.steps[i].i] = i; }
+
+  // Once the run is over the frontier is history: drawing it would bury the
+  // shape the search actually drew, which is the whole point of the picture.
+  var runOver = !!trace && index >= trace.steps.length;
+  var frontier = {};
+  if (trace && last > 0 && !runOver) {
+    var cells = trace.steps[last - 1].frontierCells;
+    for (i = 0; i < cells.length; i++) { frontier[cells[i]] = true; }
+  }
+
+  var teleAt = {};
+  (opts.teleports || []).forEach(function (t) {
+    teleAt[t.a.y * grid.w + t.a.x] = true;
+    teleAt[t.b.y * grid.w + t.b.x] = true;
+  });
+
+  var breach = opts.breachAt === undefined ? Infinity : opts.breachAt;
+
+  // Painter's order: back to front along x + y.
+  for (var d = 0; d <= grid.w + grid.h - 2; d++) {
+    for (var x = Math.max(0, d - grid.h + 1); x <= Math.min(d, grid.w - 1); x++) {
+      var y = d - x;
       var ch = grid.cells[y][x];
-      ctx.fillStyle = ch === '#' ? COLORS.wall : (ch === '~' ? COLORS.swamp : COLORS.grass);
-      ctx.fillRect(lay.ox + x * cell, lay.oy + y * cell, cell, cell);
+      var idx = y * grid.w + x;
+
+      if (ch === '#') {
+        drawTile(ctx, x, y, WALL_H, COLORS.wall, WALL_H + 9);
+        continue;
+      }
+
+      var swamp = ch === '~';
+      var z = swamp ? -SWAMP_SINK : 0;
+      var depth = swamp ? 5 : 5 + SWAMP_SINK;
+      var base = swamp ? COLORS.swamp : COLORS.grass;
+      if (ch === 'S') { base = COLORS.start; }
+      if (ch === 'G') { base = COLORS.goal; }
+      if (teleAt[idx]) { base = COLORS.teleport; }
+
+      if (frontier[idx]) {
+        var side = opts.sides ? opts.sides[idx] : undefined;
+        var fc = side === 1 ? COLORS.frontierB : COLORS.frontier;
+        if (opts.frontierOver) { fc = mixColor(fc, COLORS.exploredBust, 0.8); }
+        drawTile(ctx, x, y, z + FRONTIER_LIFT, fc, depth + FRONTIER_LIFT);
+      } else if (order[idx] !== undefined && ch !== 'S' && ch !== 'G') {
+        // Explored tints the terrain instead of repainting it: on the weighted
+        // maps the ground underneath is the whole lesson. Past the budget the
+        // tint turns red, so running out of fuel is visible on the board.
+        var k = order[idx];
+        var t = last > 1 ? k / (last - 1) : 0;
+        var tint = k >= breach
+          ? COLORS.exploredBust
+          : mixColor(COLORS.exploredEarly, COLORS.exploredLate, t);
+        drawTile(ctx, x, y, z, mixColor(base, tint, k >= breach ? 0.5 : 0.56), depth);
+      } else {
+        drawTile(ctx, x, y, z, base, depth);
+      }
     }
   }
 
-  if (trace) {
-    var last = Math.min(index, trace.steps.length);
+  drawEndpointMarker(ctx, grid.start, COLORS.start);
+  drawEndpointMarker(ctx, grid.goal, COLORS.goal);
+  (opts.teleports || []).forEach(function (t) { drawTeleport(ctx, t); });
 
-    // Explored cells, shaded by exploration order. Translucent on purpose:
-    // the terrain underneath is the whole point on the weighted maps.
-    ctx.globalAlpha = 0.62;
-    for (var k = 0; k < last; k++) {
-      var st = trace.steps[k];
-      var t = last > 1 ? k / (last - 1) : 0;
-      ctx.fillStyle = mixColor(COLORS.exploredEarly, COLORS.exploredLate, t);
-      ctx.fillRect(lay.ox + st.x * cell, lay.oy + st.y * cell, cell, cell);
-    }
-    ctx.globalAlpha = 1;
-
-    // frontier as it stands after the last expansion drawn
-    if (last > 0 && last <= trace.steps.length) {
-      var frontierCells = trace.steps[last - 1].frontierCells;
-      ctx.fillStyle = COLORS.frontier;
-      ctx.globalAlpha = 0.85;
-      for (var f = 0; f < frontierCells.length; f++) {
-        var fi = frontierCells[f];
-        var fx = fi % grid.w;
-        var fy = (fi - fx) / grid.w;
-        ctx.fillRect(lay.ox + fx * cell, lay.oy + fy * cell, cell, cell);
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    // Swamp stays legible however much shading is piled on top of it.
-    drawSwampMarks(ctx, lay, grid);
-
-    // path, once the run is complete
-    if (index >= trace.steps.length && trace.found && trace.path.length > 1) {
-      ctx.strokeStyle = COLORS.path;
-      ctx.lineWidth = Math.max(2, Math.floor(cell * 0.32));
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      for (var p = 0; p < trace.path.length; p++) {
-        var cx = lay.ox + trace.path[p].x * cell + cell / 2;
-        var cy = lay.oy + trace.path[p].y * cell + cell / 2;
-        if (p === 0) { ctx.moveTo(cx, cy); } else { ctx.lineTo(cx, cy); }
-      }
-      ctx.stroke();
-    }
-  }
-
-  // grid lines
-  if (!small) {
-    ctx.strokeStyle = COLORS.grid;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (var gx = 0; gx <= grid.w; gx++) {
-      ctx.moveTo(lay.ox + gx * cell + 0.5, lay.oy);
-      ctx.lineTo(lay.ox + gx * cell + 0.5, lay.oy + grid.h * cell);
-    }
-    for (var gy = 0; gy <= grid.h; gy++) {
-      ctx.moveTo(lay.ox + 0.5, lay.oy + gy * cell + 0.5);
-      ctx.lineTo(lay.ox + grid.w * cell + 0.5, lay.oy + gy * cell + 0.5);
-    }
+  // The cell taken off the frontier on this step, so playback has a heartbeat.
+  if (opts.cursor && trace && last > 0 && last < trace.steps.length) {
+    var st = trace.steps[last - 1];
+    var w = worldOf(st.x, st.y, 2);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    tileTop(ctx, w.x, w.y);
     ctx.stroke();
   }
 
-  drawEndpoint(ctx, lay, grid.start, COLORS.start, 'S', small);
-  drawEndpoint(ctx, lay, grid.goal, COLORS.goal, 'G', small);
-}
-
-function drawSwampMarks(ctx, lay, grid) {
-  var cell = lay.cell;
-  var r = Math.max(1, cell * 0.16);
-  ctx.fillStyle = 'rgba(31,74,38,0.65)';
-  for (var y = 0; y < grid.h; y++) {
-    for (var x = 0; x < grid.w; x++) {
-      if (grid.cells[y][x] !== '~') { continue; }
-      ctx.beginPath();
-      ctx.arc(lay.ox + x * cell + cell / 2, lay.oy + y * cell + cell / 2, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  if (runOver && trace.found) {
+    drawRibbon(ctx, trace.path);
   }
+
+  ctx.restore();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-function drawEndpoint(ctx, lay, pos, color, label, small) {
-  var cell = lay.cell;
-  var x = lay.ox + pos.x * cell;
-  var y = lay.oy + pos.y * cell;
+// The path rides above the tiles, so no amount of shading can bury it.
+function drawRibbon(ctx, path) {
+  if (!path || path.length < 2) { return; }
+  var pts = path.map(function (p) {
+    var w = worldOf(p.x, p.y, RIBBON_H);
+    return { x: w.x, y: w.y + TILE_H / 2 };
+  });
+
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  strokePath(ctx, pts, 0, 7, 'rgba(0,0,0,0.38)', 8);
+  strokePath(ctx, pts, 0, 0, COLORS.path, 6.5);
+  strokePath(ctx, pts, 0, -2, 'rgba(255,255,255,0.4)', 1.6);
+}
+
+function strokePath(ctx, pts, dx, dy, color, width) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  for (var i = 0; i < pts.length; i++) {
+    var x = pts[i].x + dx;
+    var y = pts[i].y + dy;
+    if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
+  }
+  ctx.stroke();
+}
+
+function drawEndpointMarker(ctx, pos, color) {
+  if (!pos) { return; }
+  var w = worldOf(pos.x, pos.y, 0);
+  var cx = w.x;
+  var cy = w.y + TILE_H / 2;
   ctx.fillStyle = color;
-  ctx.fillRect(x, y, cell, cell);
-  if (small) { return; }
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold ' + Math.floor(cell * 0.7) + 'px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, x + cell / 2, y + cell / 2 + 1);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 20);
+  ctx.lineTo(cx + 5, cy - 9);
+  ctx.lineTo(cx - 5, cy - 9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 0.3;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 6, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
 }
 
-// Size a canvas to the grid so there are no empty bands around the map.
-function fitCanvas(canvas, grid, maxW, maxH) {
-  var cell = Math.max(1, Math.floor(Math.min(maxW / grid.w, maxH / grid.h)));
-  canvas.width = cell * grid.w;
-  canvas.height = cell * grid.h;
-  return cell;
+function drawTeleport(ctx, t) {
+  [t.a, t.b].forEach(function (p) {
+    var w = worldOf(p.x, p.y, 1);
+    ctx.strokeStyle = COLORS.teleport;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(w.x, w.y + TILE_H / 2, TILE_W * 0.3, TILE_H * 0.3, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+}
+
+/* ---------- canvas sizing ---------- */
+
+// Size a canvas to CSS pixels with device-pixel-ratio backing.
+function sizeCanvas(canvas, cssW, cssH) {
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas._dpr = dpr;
+  canvas.width = Math.max(1, Math.round(cssW * dpr));
+  canvas.height = Math.max(1, Math.round(cssH * dpr));
+  canvas.style.width = cssW + 'px';
+  canvas.style.height = cssH + 'px';
 }

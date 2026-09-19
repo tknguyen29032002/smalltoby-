@@ -26,10 +26,13 @@ The game turns those trade-offs into budgets the player can see run out.
 
 1. A map appears with a start, a goal, an objective, and one or two budgets.
 2. The player picks an algorithm. The pick is the prediction.
-3. The algorithm animates: cells fill in exploration order, the frontier is highlighted, the path is drawn at the end. Budget bars drain live.
-4. A verdict card says whether the objective and budget were met, and one sentence of why.
-5. A compare strip shows what the other three algorithms would have done on the same map.
-6. Stars: 3 = best fit, 1 = objective met but budget wasted, 0 = failed.
+3. The algorithm animates: cells fill in exploration order, the lifted frontier shows what is still held, and the path is drawn as a raised ribbon at the end. Budget bars drain live, and anything explored past the fuel budget turns red on the board.
+4. A verdict sheet rises over the map: stars, what happened, one sentence of why, and the name of the CS concept the level just taught.
+5. The same sheet compares what every other algorithm would have done on the same map.
+6. Stars: 3 = best fit, 1 = objective met but budget wasted, 0 = failed. Stars persist, and one star opens the next level.
+
+The board is the whole window. Drag to pan, scroll to zoom, `F` to refit, space to play, `→` to step, `1`-`9` to pick an algorithm.
+The design review behind this shape, and the roadmap it produced, is in [VISION.md](VISION.md).
 
 ## Objectives and budgets
 
@@ -71,9 +74,9 @@ G  goal
 
 ## Structure
 
-- `index.html` - layout and buttons.
-- `style.css` - styling.
+- `index.html` - the full-window canvas plus the HUD that floats over it.
+- `style.css` - styling. House rule: the map is the screen, so there is no panel layout and nothing scrolls.
 - `levels.js` - the ASCII maps plus objective and budgets per level.
 - `search.js` - one `search(grid, strategy)` function. The four algorithms are the same loop with a different frontier: queue, stack, sorted by g, sorted by g + h. It returns a full trace (expansion order, frontier size per step, final path) so playback is just stepping an index.
-- `render.js` - draws grid, visited-by-order, frontier, and path for a given trace index.
-- `game.js` - level state, button wiring, playback via `requestAnimationFrame`, scoring, compare strip.
+- `render.js` - isometric board renderer: terrain with height, exploration order, lifted frontier, raised path ribbon, and the camera (`fitCamera`, `drawScene`, `screenToCell`).
+- `game.js` - level state, camera input, playback via `requestAnimationFrame`, scoring, stars in `localStorage`, verdict and compare. The algorithm picker and its glossary cards are built from the strategy registry, so a strategy added in `search.js` appears in the UI with no change here.
