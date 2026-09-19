@@ -8,7 +8,11 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 Plain HTML/CSS/JS game, no build step and no dependencies: `index.html` must keep working when opened straight from disk over `file://`, so no `fetch()` of local files, no ES modules, and nothing from a CDN. See the README for the file-by-file map and the two local run paths.
 
-The five levels only teach if each one's intended algorithm is the one that earns three stars. Budgets in `levels.js` are tuned to that, and the tuning is checkable: run `node tools/verify-levels.js` after touching `levels.js`, `search.js`, or the scoring in `game.js`. It exits non-zero when a level stops matching the design table.
+A level only teaches if its intended algorithm is the one that earns three stars. Budgets in `levels.js` are tuned to that, and the tuning is checkable: run `node tools/verify-levels.js` after touching `levels.js`, `search.js`, or the scoring in `game.js`. It exits non-zero when a level stops matching the design table.
+
+`node tools/verify-engine.js` is the companion check for the engine itself - registry fields, trace fields, and every mechanic (teleports, refund chutes, fog, hot swap, legs, dispatch). Run both after any change to `search.js`. README.md's "Engine contract" section is what they enforce; change the contract and the docs in the same commit.
+
+The engine has one loop, not two: `search()` is `runSearch(createSearch(...))`, and hot swap works only because every priority/queue/stack strategy shares that state. Strategies with their own shape are marked `hotSwappable: false` in the registry. When touching the loop, prove the original four strategies are untouched by diffing their traces against the previous `search.js` - the shipped levels are tuned to the exact expansion order.
 
 ## Maintaining this file
 
