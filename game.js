@@ -323,15 +323,22 @@ function whySentence(level, algo, trace, refs) {
     return name + ' peaked at ' + b.used + ' frontier cells against a budget of ' + b.limit + '.';
   }
 
-  var rival = STRATS.map(function (s) { return s.id; })
-    .filter(function (a) { return a !== algo && state.traces[a]; })
-    .reduce(function (acc, a) {
+  // Three stars: teach by contrast with whichever rival worked hardest for the
+  // SAME answer. A rival that missed the objective did not get the same answer,
+  // so it cannot carry this sentence - on the levels DFS or BFS is designed to
+  // fail, claiming it would have is the opposite of the lesson.
+  var peers = STRATS.map(function (s) { return s.id; }).filter(function (a) {
+    return a !== algo && state.traces[a] && objectiveMet(level, state.traces[a], refs);
+  });
+  if (peers.length > 0) {
+    var rival = peers.reduce(function (acc, a) {
       return state.traces[a].expansions > state.traces[acc].expansions ? a : acc;
-    }, algo);
-  var rivalTrace = state.traces[rival];
-  if (rival !== algo && rivalTrace.expansions > trace.expansions * 1.2) {
-    return 'On this map ' + nameOf(rival) + ' would have spent ' + rivalTrace.expansions +
-      ' expansions to get the same answer, and ' + name + ' needed only ' + trace.expansions + '.';
+    });
+    var rivalTrace = state.traces[rival];
+    if (rivalTrace.expansions > trace.expansions * 1.2) {
+      return 'On this map ' + nameOf(rival) + ' would have spent ' + rivalTrace.expansions +
+        ' expansions to get the same answer, and ' + name + ' needed only ' + trace.expansions + '.';
+    }
   }
   if (level.objective === 'any') {
     return 'Reaching the goal was never the hard part here - holding the search in memory was, and ' +
@@ -572,6 +579,10 @@ function peakFrontierUpTo(trace, index) {
   return peak;
 }
 
+// A budget that does not apply is no longer drawn at all - buildBudgets emits
+// a row only for the budgets a level actually has, and rebuilds them per level
+// - so the stale-red-bar case QA found cannot arise here. The toggles below
+// still clear their own classes on every update.
 function setBar(key, used, limit) {
   var bar = document.getElementById(key + '-bar');
   var count = document.getElementById(key + '-count');
@@ -669,7 +680,11 @@ function finish() {
   buildCompare();
 
   el.next.textContent = state.levelIndex >= LEVELS.length - 1 ? 'Replay a level' : 'Next level';
-  el.next.disabled = stars === 0 && state.levelIndex < LEVELS.length - 1;
+  // The gate is the best result on this level, not the last one: a player who
+  // has already earned a star here and then goes back to watch DFS fail has
+  // not un-earned the next level.
+  el.next.disabled = (state.earned[state.levelIndex] || 0) === 0 &&
+    state.levelIndex < LEVELS.length - 1;
   el.retry2.className = stars === 3 ? '' : 'primary';
   el.gateNote.textContent = el.next.disabled
     ? 'One star on this level opens the next one.'

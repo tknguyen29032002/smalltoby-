@@ -34,6 +34,24 @@
   const rows = [];
   const problems = [];
 
+  // The page is one full-window board with a floating HUD: the verdict and the
+  // compare strip live in an overlay sheet, and a level draws a budget row only
+  // for the budgets it actually has, so a missing row means "no budget" where
+  // the old panel printed "n/a".
+  const overlayOpen = () => !$('overlay').classList.contains('hidden');
+  const budget = key => {
+    const count = $(key + '-count');
+    if (!count) { return 'n/a'; }
+    const limits = (typeof state !== 'undefined' && state.level && state.level.budgets) || {};
+    const limit = key === 'exp' ? limits.expansions : limits.frontier;
+    return count.textContent + '/' + (limit === undefined ? 'n/a' : limit);
+  };
+  const noLimit = v => v === 'n/a' || v.endsWith('/n/a');
+  const barOver = key => {
+    const bar = $(key + '-bar');
+    return !!bar && bar.classList.contains('over');
+  };
+
   const runToEnd = () => {
     let guard = 0;
     while (!$('btn-step').disabled && guard++ < 5000) { $('btn-step').click(); }
@@ -41,7 +59,8 @@
     return guard;
   };
 
-  const levelCount = Number(($('level-progress').textContent.split('/')[1] || '0').trim());
+  const levelCount = (typeof LEVELS !== 'undefined' && LEVELS.length) || 0;
+  if (!levelCount) { problems.push('could not determine how many levels there are'); }
 
   for (let lv = 1; lv <= levelCount; lv++) {
     for (const algo of algos) {
@@ -59,31 +78,34 @@
         starGlyphs: $('stars').textContent,
         headline: $('verdict-text').textContent.trim(),
         why: $('verdict-why').textContent.trim(),
-        exp: $('exp-count').textContent + '/' + $('exp-limit').textContent,
-        front: $('front-count').textContent + '/' + $('front-limit').textContent,
-        expOver: $('exp-bar').classList.contains('over'),
-        frontOver: $('front-bar').classList.contains('over'),
+        exp: budget('exp'),
+        front: budget('front'),
+        expOver: barOver('exp'),
+        frontOver: barOver('front'),
         compare: [...document.querySelectorAll('#compare-grid .cmp')].map(c => c.className).join('|')
       };
       rows.push(row);
 
       // --- invariants the page itself must satisfy ---
       const at = 'L' + lv + ' ' + algo + ': ';
-      if ($('verdict').classList.contains('hidden')) { problems.push(at + 'no verdict card after finishing'); }
-      if ($('compare').classList.contains('hidden')) { problems.push(at + 'no compare strip after finishing'); }
+      if (!overlayOpen()) { problems.push(at + 'no verdict sheet after finishing'); }
+      if (!document.querySelector('#compare-grid .cmp')) { problems.push(at + 'no compare strip after finishing'); }
+      if (!$('concept-chip').textContent.trim()) { problems.push(at + 'verdict names no concept'); }
       if (row.compare.split('|').filter(c => /\bchosen\b/.test(c)).length !== 1) {
         problems.push(at + 'compare strip does not mark exactly one chosen card');
       }
       if ($('btn-retry').disabled) { problems.push(at + 'Retry disabled after finishing'); }
-      if (row.exp.split('/')[0] !== String(steps)) {
+      // Only levels that have an expansion budget draw an expansion counter.
+      if (!noLimit(row.exp) && row.exp.split('/')[0] !== String(steps)) {
         problems.push(at + 'expansion counter ' + row.exp + ' disagrees with ' + steps + ' steps taken');
       }
-      // A budget with no limit must never be drawn as breached.
-      if (row.exp.endsWith('/n/a') && row.expOver) { problems.push(at + 'expansion bar flagged over with no budget'); }
-      if (row.front.endsWith('/n/a') && row.frontOver) { problems.push(at + 'frontier bar flagged over with no budget'); }
+      // A budget with no limit must never be drawn, let alone drawn as breached.
+      if (noLimit(row.exp) && row.expOver) { problems.push(at + 'expansion bar flagged over with no budget'); }
+      if (noLimit(row.front) && row.frontOver) { problems.push(at + 'frontier bar flagged over with no budget'); }
       // Retry must put the level back to its untouched state.
       $('btn-retry').click();
-      if ($('exp-count').textContent !== '0' || !$('verdict').classList.contains('hidden')) {
+      const counter = $('exp-count') || $('front-count');
+      if ((counter && counter.textContent !== '0') || overlayOpen()) {
         problems.push(at + 'Retry did not reset the run');
       }
       runToEnd();
@@ -109,12 +131,20 @@
         document.querySelector('.algo[data-algo="' + offender.algo + '"]').click();
         runToEnd();
       }
+      if ($('btn-next').disabled) {
+        problems.push('L' + lv + ': next level still gated after the level was starred');
+      }
       $('btn-next').click();
+      if (typeof state !== 'undefined' && state.levelIndex !== lv) {
+        problems.push('L' + lv + ': Next level did not advance the board');
+      }
     }
   }
 
-  // The last level must not offer a next level, and earlier ones must.
-  if (!$('btn-next').disabled) { problems.push('Next level still enabled on the last level'); }
+  // The last level offers a replay rather than a next level.
+  if ($('btn-next').textContent.trim() === 'Next level') {
+    problems.push('the last level still offers a next level');
+  }
 
   // Digest of every recorded number and sentence: two origins serving the same
   // build must produce the same one.
