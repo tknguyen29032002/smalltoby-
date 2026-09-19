@@ -497,16 +497,18 @@
     } else {
       el.verdict.textContent = 'Out of charge.';
       el.why.textContent = st.reason + ' ' + sum.secured + ' of ' + sum.deliveries +
-        ' deliveries were secured. The expensive shot is usually the one that searched the whole floor.';
+        ' deliveries were secured.' + (sum.shots ? ' The expensive shot is usually the one that searched the whole floor.' : '');
     }
     if (debug) { el.why.textContent += ' (Free-walk was on, so no stars are kept.)'; }
     el.chip.textContent = level.teaches;
     el.note.textContent = level.lesson;
 
+    var won = st.status === 'won';
     var cells = [
       ['Deliveries', sum.secured + ' / ' + sum.deliveries, sum.secured === sum.deliveries],
-      ['Ticks', sum.ticks + ' (par ' + par.ticks + ')', sum.ticks <= par.ticks],
-      ['Charge spent', sum.spent + ' (par ' + par.charge + ')', sum.spent <= par.charge],
+      // Par only means something on a floor that was cleared.
+      ['Ticks', sum.ticks + ' (par ' + par.ticks + ')', won ? sum.ticks <= par.ticks : null],
+      ['Charge spent', sum.spent + ' (par ' + par.charge + ')', won ? sum.spent <= par.charge : null],
       ['Shots', sum.shots + (sum.hits ? ', ' + sum.hits + ' strikes landed' : ''), null],
       ['Lockboxes', (sum.score / Heist.RULES.chestScore) + ' recovered, ' + sum.stolen + ' stolen', null],
       ['Hot swaps', String(st.swaps), null]
