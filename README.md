@@ -1,5 +1,7 @@
 # Pathfinder Dispatch
 
+Play it: https://tknguyen29032002.github.io/smalltoby-/
+
 A small browser game that teaches graph pathfinding by making the trade-offs visible.
 Pick BFS, DFS, Dijkstra, or A* for a map, watch it explore, and see what it cost.
 
