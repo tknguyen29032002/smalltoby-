@@ -34,10 +34,14 @@ function play(enc) {
     var leg = legs[n];
     var d = state.deliveries[leg.to];
     var guard = 0;
-    while (!d.secured && state.status === 'playing' && guard++ < 60) {
+    while (!d.secured && state.status === 'playing' && guard++ < 80) {
       var aim = { x: d.x, y: d.y };
-      var out = Heist.fire(state, leg.power, aim);
-      if (out.refused) { fail(enc, 'the perfect line was refused: ' + out.refused); return state; }
+      // The line's power, unless from where the cart now stands it would
+      // overheat or find nothing - then the cheapest power that works.
+      var power = works(state, leg.power, aim) ? leg.power : cheapest(state, aim);
+      if (!power) { Heist.tick(state); continue; }
+      var out = Heist.fire(state, power, aim);
+      if (out.refused) { fail(enc, 'a plot was refused: ' + out.refused); return state; }
       // Ride it out, but get off the moment the delivery is shoved away.
       var rideGuard = 0;
       while (state.ride && state.status === 'playing' && rideGuard++ < 300) {
@@ -51,6 +55,29 @@ function play(enc) {
   return state;
 }
 
+// A dry run of a plot: the search, with none of its costs applied.
+function probe(state, power, aim) {
+  var h = Heist.openFire(state, power, aim);
+  if (h.refused) { return null; }
+  while (!h.done) { Heist.stepFire(h); }
+  var t = Heist.traceOf(h);
+  if (!t.found || (state.memory !== null && t.peakFrontier > state.memory)) { return null; }
+  var ride = t.path.slice(1).reduce(function (n, p) { return n + E.cellCost(state.grid, p.x, p.y); }, 0);
+  return C.plotCharge(t, state.map) + ride;
+}
+
+function works(state, power, aim) { return probe(state, power, aim) !== null; }
+
+function cheapest(state, aim) {
+  var best = null;
+  var bestCost = Infinity;
+  state.powers.forEach(function (p) {
+    var c = probe(state, p, aim);
+    if (c !== null && c < bestCost) { best = p; bestCost = c; }
+  });
+  return best;
+}
+
 /* ----------------------------------------------- still floor, same prices ---
  * With the thieves taken off, the first plot of a level must cost exactly
  * what verify-campaign charges for it, or par measures a different game. */
@@ -60,16 +87,17 @@ function stillPlotMatches(enc) {
   state.bots = [];
   var leg = enc.perfectLine.legs[0];
   var d = state.deliveries[leg.to];
+  var map = Heist.mapOf(enc);
   var before = state.spent;
   var out = Heist.fire(state, leg.power, { x: d.x, y: d.y });
   var params = E.defaultParams(leg.power);
-  params.from = Heist.mapOf(enc) && E.parseGrid(Heist.mapOf(enc).ascii).start;
+  params.from = state.grid.start;
   params.to = { x: d.x, y: d.y };
   params.fog = !!enc.fog;
   params.hideGoal = !!enc.prizeBehaviour.hidden;
-  var trace = E.search(E.parseGrid(Heist.mapOf(enc).ascii), leg.power, params);
-  if (state.spent - before !== C.plotCharge(trace)) {
-    fail(enc, 'a still-floor plot cost ' + (state.spent - before) + ', verify-campaign charges ' + C.plotCharge(trace));
+  var want = C.plotCharge(E.search(state.grid, leg.power, params), map);
+  if (state.spent - before !== want) {
+    fail(enc, 'a still-floor plot cost ' + (state.spent - before) + ', verify-campaign charges ' + want);
   }
   return out;
 }

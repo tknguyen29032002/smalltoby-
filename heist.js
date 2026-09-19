@@ -13,7 +13,8 @@
  *
  * The rules, in one paragraph. The cart does not walk. The player aims a
  * power at a cell; the power (an engine strategy) searches from the cart, the
- * plot costs ceil(expansions / 10) charge and one tick, and the cart then
+ * plot costs 1 charge plus every expansion past the map's thinking allowance
+ * and one tick - or overheats past the map's memory - and the cart then
  * rides the route one cell per tick, paying each cell's terrain (plate 1,
  * oil 5 and a tick to climb out, a power cell pays 4 back). The route is a
  * searchlight: a hauler it touches is stunned and drops its lockbox, a scout
@@ -126,12 +127,15 @@ var Heist = (function () {
       player: { x: grid.start.x, y: grid.start.y, facing: 1 },
       ride: null,
       stall: 0,
-      deliveries: grid.goals.map(function (g, i) {
-        return { id: i, x: g.x, y: g.y, secured: false, heldBy: null, known: !enc.prizeBehaviour.hidden };
+      fog: !!(enc.fog || map.fog),
+      hidden: !!(enc.prizeBehaviour.hidden || map.goalKnown === false),
+      memory: C.memoryOf(enc, map),
+      deliveries: C.deliveryCellsOf(enc, map).map(function (g, i) {
+        return { id: i, x: g.x, y: g.y, secured: false, heldBy: null, known: true };
       }),
       bots: [],
       chests: [],
-      pads: padsOf(grid),
+      pads: C.chestPadsOf(enc, map),
       nextChest: 1,
       chestGold: 0,
       chestsTaken: 0,
@@ -157,34 +161,24 @@ var Heist = (function () {
       var b = Shop.BOOST_BY_ID[id];
       if (b) { state.boosts[id] = Math.min(b.perLevel, opts.boosts[id]); }
     });
+    state.deliveries.forEach(function (d) { d.known = !state.hidden; });
     placeBots(state);
     revealAround(state, state.player.x, state.player.y, REVEAL);
     return state;
   }
 
-  // Chest pads: the map's `$` cells. Extra `S` cells are thief bays.
-  function padsOf(grid) {
-    var out = [];
-    for (var y = 0; y < grid.h; y++) {
-      for (var x = 0; x < grid.w; x++) {
-        if (grid.cells[y][x] === '$') { out.push({ x: x, y: y }); }
-      }
-    }
-    return out;
-  }
-
   // Foremen start on the deliveries they hold. Everyone else takes, in order,
-  // the map's extra start bays, then its chest pads, then the floor cells
-  // farthest from the cart - all deterministic, so a replay starts the same.
+  // the map's extra S cells (its thief dens), then its lockbox pads, then
+  // floor spread as evenly as it can be: each next thief goes where it is
+  // farthest from the cart, the deliveries and every thief already placed, so
+  // no corner turns into a nest. All deterministic, so a replay starts the same.
   function placeBots(state) {
     var enc = state.enc;
     var grid = state.grid;
-    var taken = {};
+    var placed = [state.player].concat(state.deliveries);
     var id = 1;
     var held = enc.prizeBehaviour.heldByBoss.slice();
-    function claim(p) { taken[idx(grid, p.x, p.y)] = true; }
-    claim(state.player);
-    state.deliveries.forEach(function (d) { claim(d); });
+    function taken(c) { return placed.some(function (p) { return p.x === c.x && p.y === c.y; }); }
 
     enc.bots.forEach(function (group) {
       if (group.type !== 'boss') { return; }
@@ -197,34 +191,45 @@ var Heist = (function () {
       }
     });
 
-    var spots = grid.starts.slice(1).concat(state.pads).concat(farCells(state));
+    var fixed = grid.starts.slice(1).concat(state.pads);
+    var floor = reachableFloor(state);
     enc.bots.forEach(function (group) {
       if (group.type === 'boss') { return; }
       for (var n = 0; n < group.count; n++) {
         var at = null;
-        while (spots.length && !at) {
-          var c = spots.shift();
-          if (!taken[idx(grid, c.x, c.y)]) { at = c; }
+        while (fixed.length && !at) {
+          var c = fixed.shift();
+          if (!taken(c)) { at = c; }
         }
+        if (!at) { at = spreadCell(floor, placed); }
         if (!at) { throw new Error('no room on ' + state.map.id + ' for thief ' + id); }
-        claim(at);
+        placed.push(at);
         state.bots.push(makeBot(id++, group.type, at, 1));
       }
     });
   }
 
-  function farCells(state) {
+  function reachableFloor(state) {
     var grid = state.grid;
     var d = bfsFrom(grid, state.player);
     var out = [];
     for (var y = 0; y < grid.h; y++) {
       for (var x = 0; x < grid.w; x++) {
-        if (grid.cells[y][x] !== '.' || d[idx(grid, x, y)] === Infinity) { continue; }
-        out.push({ x: x, y: y, d: d[idx(grid, x, y)] });
+        if (grid.cells[y][x] === '.' && d[idx(grid, x, y)] !== Infinity) { out.push({ x: x, y: y }); }
       }
     }
-    out.sort(function (a, b) { return b.d - a.d || a.y - b.y || a.x - b.x; });
     return out;
+  }
+
+  function spreadCell(floor, placed) {
+    var best = null;
+    var bestD = -1;
+    floor.forEach(function (c) {
+      var m = Infinity;
+      placed.forEach(function (p) { m = Math.min(m, dist(c, p)); });
+      if (m > bestD) { best = c; bestD = m; }
+    });
+    return bestD > 0 ? best : null;
   }
 
   function bfsFrom(grid, from) {
@@ -255,6 +260,7 @@ var Heist = (function () {
       facing: 1,
       stunned: 0,
       fleeing: 0,
+      calm: 0,
       carrying: null,
       holding: null
     };
@@ -279,7 +285,7 @@ var Heist = (function () {
 
   // What the player can see. On a lit floor that is everything.
   function visible(state, x, y) {
-    if (!state.enc.fog) { return true; }
+    if (!state.fog) { return true; }
     return !!state.revealed[idx(state.grid, x, y)];
   }
 
@@ -369,21 +375,37 @@ var Heist = (function () {
     params.from = { x: state.player.x, y: state.player.y };
     params.to = { x: target.x, y: target.y };
     params.targets = [{ x: target.x, y: target.y }];
-    params.fog = !!state.enc.fog;
-    params.hideGoal = !!state.enc.prizeBehaviour.hidden;
-    return {
+    params.fog = state.fog;
+    params.hideGoal = state.hidden;
+    var handle = {
       powerId: powerId,
       power: power,
       firstPower: powerId,
       target: { x: target.x, y: target.y },
       swaps: [],
-      search: E.createSearch(state.grid, powerId, params),
+      search: null,
+      trace: null,
+      played: 0,
       done: false
     };
+    // Strategies with their own shape (bidirectional, deepening, relaxation,
+    // field, wall) only run through search(); the resumable loop is for the
+    // queue/stack/priority family. Those are run whole and played back.
+    if (E.STRATEGY_BY_ID[powerId].hotSwappable) {
+      handle.search = E.createSearch(state.grid, powerId, params);
+    } else {
+      handle.trace = E.search(state.grid, powerId, params);
+    }
+    return handle;
   }
 
   function stepFire(handle) {
     if (!handle || handle.done) { return null; }
+    if (handle.trace) {
+      var played = handle.trace.steps[handle.played++] || null;
+      if (handle.played >= handle.trace.steps.length) { handle.done = true; }
+      return played;
+    }
     var step = E.stepSearch(handle.search);
     // The engine marks a run done on the step that reaches the target; a
     // further stepSearch would keep expanding, so stop on either signal.
@@ -391,10 +413,22 @@ var Heist = (function () {
     return step;
   }
 
+  // The trace of a plot so far: the engine's own for a resumable search, the
+  // played-back part of a whole one (finished only once playback is).
+  function traceOf(handle) {
+    if (!handle.trace) { return E.traceOf(handle.search); }
+    if (handle.done) { return handle.trace; }
+    return { expansions: Math.min(handle.played, handle.trace.expansions), found: false, path: [], steps: handle.trace.steps.slice(0, handle.played), peakFrontier: 0 };
+  }
+
+  // Charge a plot will cost if it ends now: what the page drains live.
+  function pendingCost(state, handle) { return C.plotCharge(traceOf(handle), state.map); }
+
   // A hot swap is a power change like any other, so it spends the swap cap.
   function hotSwap(state, handle, powerId) {
     if (!handle || handle.done) { return 'The search is already over.'; }
     if (powerId === handle.powerId) { return 'That power is already running.'; }
+    if (handle.trace) { return handle.power.name + ' has its own shape: nothing can take it over mid-search.'; }
     if (state.powers.indexOf(powerId) < 0) { return 'That power is not unlocked yet.'; }
     if (swapsLeft(state) - pendingSwaps(state, handle) <= 0) { return 'No power changes left on this floor.'; }
     var power = POWER_BY_ID[powerId];
@@ -415,7 +449,7 @@ var Heist = (function () {
   function closeFire(state, handle) {
     if (!handle || handle.refused) { return null; }
     while (!handle.done) { stepFire(handle); }
-    return applyPlot(state, handle, E.traceOf(handle.search));
+    return applyPlot(state, handle, traceOf(handle));
   }
 
   // Headless: the same plot, run to the end, with an optional schedule of
@@ -426,16 +460,16 @@ var Heist = (function () {
     if (handle.refused) { return { refused: handle.refused, message: handle.refused }; }
     var schedule = (opts.swaps || []).slice();
     while (!handle.done) {
-      while (schedule.length && handle.search.expansions >= schedule[0].atStep) {
+      while (schedule.length && handle.search && handle.search.expansions >= schedule[0].atStep) {
         hotSwap(state, handle, schedule.shift().to);
       }
       stepFire(handle);
     }
-    return applyPlot(state, handle, E.traceOf(handle.search));
+    return applyPlot(state, handle, traceOf(handle));
   }
 
   function applyPlot(state, handle, trace) {
-    var cost = C.plotCharge(trace);
+    var cost = C.plotCharge(trace, state.map);
     var out = { powerId: handle.powerId, target: handle.target, trace: trace, cost: cost, rode: false, hit: false, message: '' };
     state.plots++;
     state.swaps += pendingSwaps(state, handle);
@@ -445,8 +479,8 @@ var Heist = (function () {
     spend(state, cost, 'The last plot emptied the charge meter.');
     if (state.status !== 'playing') { out.message = 'Out of charge.'; return out; }
 
-    if (state.enc.memoryCap !== null && trace.peakFrontier > state.enc.memoryCap) {
-      out.message = handle.power.name + ' held ' + trace.peakFrontier + ' leads, more than the ' + state.enc.memoryCap +
+    if (state.memory !== null && trace.peakFrontier > state.memory) {
+      out.message = handle.power.name + ' held ' + trace.peakFrontier + ' leads, more than the ' + state.memory +
         ' this floor allows. It overheated: ' + cost + ' charge and the cart did not move.';
       worldTick(state);
       return out;
@@ -499,6 +533,7 @@ var Heist = (function () {
       return 'proofed';
     }
     bot.hp -= 1;
+    bot.stunned = def.cadence;               // staggered: he skips his next drag
     state.hits++;
     out.hit = true;
     if (bot.hp > 0) {
@@ -595,8 +630,13 @@ var Heist = (function () {
       state.stall--;
     } else if (state.ride) {
       var next = state.ride.path[state.ride.i];
-      if (botAt(state, next.x, next.y)) {
-        say(state, 'bump', 'A thief is in the way; the cart waits.');
+      var blocker = botAt(state, next.x, next.y);
+      if (blocker && !blocker.stunned && !blocker.fleeing) {
+        // A thief standing on the route ends the ride: the cart does not
+        // wait on a robot that may never move. One that is stunned or running
+        // from the light is rolled past.
+        state.ride = null;
+        say(state, 'bump', blocker.name + ' is standing on the route. The ride stops here.');
       } else {
         state.ride.i++;
         if (state.ride.i >= state.ride.path.length) { state.ride = null; }
@@ -706,7 +746,8 @@ var Heist = (function () {
     if (bot.type === 'boss' || bot.fleeing > 0) {
       next = awayFromCart(state, bot);
     } else if (bot.type === 'fast') {
-      next = dist(bot, state.player) <= def.aggroRange ? toward(state, bot, state.player, def.plans) : wander(state, bot);
+      if (bot.calm > 0) { bot.calm--; }
+      next = !bot.calm && dist(bot, state.player) <= def.aggroRange ? toward(state, bot, state.player, def.plans) : wander(state, bot);
     } else {
       var goal = haulerGoal(state, bot);
       next = goal ? toward(state, bot, goal, def.plans) : wander(state, bot);
@@ -718,6 +759,11 @@ var Heist = (function () {
     if (state.player.x === next.x && state.player.y === next.y) {
       spend(state, def.drain, 'A thief rammed the cart with the meter already empty.');
       say(state, 'bump', bot.name + ' rammed the cart: -' + def.drain + ' charge.');
+      // A ram is one hit, not a grind: the thief bounces off, backs away for
+      // as long as the light would have sent it running, and does not come
+      // hunting again until it has crossed its own hunting range.
+      bot.fleeing = BOTS.fast.fleeTicks;
+      bot.calm = BOTS.fast.aggroRange;
       return false;
     }
     if (botAt(state, next.x, next.y)) { return false; }
@@ -737,6 +783,10 @@ var Heist = (function () {
 
     bot.x = next.x;
     bot.y = next.y;
+    // The route the cart is riding stays lit: a hauler or a scout that steps
+    // onto what is left of it is caught in the light, exactly as if the plot
+    // had found it there. Foremen are fought with plots, not ribbons.
+    if (bot.type !== 'boss' && onRide(state, bot)) { light(state, bot, POWER_BY_ID[state.ride.power], {}); }
     if (bot.holding !== null) {
       var held = state.deliveries[bot.holding];
       held.x = bot.x;
@@ -755,6 +805,14 @@ var Heist = (function () {
       }
     }
     return true;
+  }
+
+  function onRide(state, bot) {
+    if (!state.ride) { return false; }
+    for (var i = state.ride.i; i < state.ride.path.length; i++) {
+      if (state.ride.path[i].x === bot.x && state.ride.path[i].y === bot.y) { return true; }
+    }
+    return false;
   }
 
   // Lockboxes, then free deliveries to shove, else patrol. Carrying: home.
@@ -863,6 +921,8 @@ var Heist = (function () {
     fire: fire,
     openFire: openFire,
     stepFire: stepFire,
+    traceOf: traceOf,
+    pendingCost: pendingCost,
     hotSwap: hotSwap,
     closeFire: closeFire,
     nudge: nudge,

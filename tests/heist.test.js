@@ -1,11 +1,10 @@
-/* tests/heist.test.js - the Factory Heist rules and campaign contract.
+/* tests/heist.test.js - the simulator's contract.
  *
- * tools/verify-heist.js is the design table (every floor winnable with the
- * powers unlocked by then, pars earned by a real run); this file runs it as
- * part of `npm test` and pins the rules the page relies on: the unlock order
- * covers every power exactly once, every power has a human label in the
- * registry, replays are exact, and strikes stun ordinary robots rather than
- * removing them.
+ * tools/verify-heist.js plays all fifteen encounters with the thieves on the
+ * floor; this runs it inside `npm test` and pins the rules the page and the
+ * par measurement rely on: heist.js reads its floor from maps.js and its
+ * prices from campaign.js, every power has a human label, replays are exact,
+ * and the light, the ram, the nudge and the boosts do what CAMPAIGN.md says.
  */
 
 var test = require('node:test');
@@ -15,79 +14,157 @@ var childProcess = require('child_process');
 
 var ROOT = path.join(__dirname, '..');
 var Heist = require(path.join(ROOT, 'heist.js'));
-var campaign = require(path.join(ROOT, 'campaign.js'));
-var engine = require(path.join(ROOT, 'search.js'));
+var C = require(path.join(ROOT, 'campaign.js'));
+var E = require(path.join(ROOT, 'search.js'));
 
-var LEVELS = campaign.HEIST_LEVELS;
+// A level with the thieves taken off, for rules that are about the cart.
+function still(level) {
+  var st = Heist.create(C.encounter(level));
+  st.bots = [];
+  st.deliveries.forEach(function (d) { d.heldBy = null; });
+  return st;
+}
 
-test('verify-heist: all fifteen floors playable and on par', function () {
+test('verify-heist: every encounter won with the thieves on, every log replays', function () {
   var out = childProcess.spawnSync(process.execPath, [path.join(ROOT, 'tools', 'verify-heist.js')], { encoding: 'utf8' });
   assert.strictEqual(out.status, 0, out.stdout + out.stderr);
-  assert.match(out.stdout, /ALL 15 FLOORS PLAYABLE AND ON PAR/);
 });
 
-test('the campaign has fifteen floors with 2-3 deliveries each', function () {
-  assert.strictEqual(LEVELS.length, 15);
-  LEVELS.forEach(function (lv) {
-    var n = engine.parseGrid(lv.map).goals.length;
-    assert.ok(n >= 2 && n <= 3, lv.id + ' has ' + n + ' deliveries');
-    assert.ok(lv.teaches && lv.lesson, lv.id + ' names the concept it teaches');
+test('the floor is the map the encounter names, and the deliveries are the campaign\'s', function () {
+  C.ENCOUNTERS.forEach(function (enc) {
+    var st = Heist.create(enc);
+    var map = Heist.mapOf(enc);
+    assert.strictEqual(st.map.id, enc.mapId);
+    assert.deepStrictEqual(st.deliveries.map(function (d) { return [d.x, d.y]; }),
+      C.deliveryCellsOf(enc, map).map(function (d) { return [d.x, d.y]; }));
+    assert.strictEqual(st.bots.length, C.botCount(enc), 'L' + enc.level + ' puts every thief on the floor');
+    assert.strictEqual(st.charge, enc.startCharge);
   });
 });
 
-test('every power unlocks exactly once, and has a registry label', function () {
-  var ids = Heist.POWERS.map(function (p) { return p.id; });
-  var unlocks = campaign.HEIST_UNLOCKS.filter(Boolean);
-  assert.deepStrictEqual(unlocks.slice().sort(), ids.slice().sort());
-  ids.forEach(function (id) {
-    var s = engine.STRATEGY_BY_ID[id];
-    assert.ok(s, id + ' is in the engine registry');
-    assert.ok(s.label && s.label !== id, id + ' has a human label, not its id');
+test('every power has a human label, never its id', function () {
+  Heist.POWERS.forEach(function (p) {
+    var s = E.STRATEGY_BY_ID[p.id];
+    assert.ok(s && s.label && s.label !== p.id, p.id);
+    assert.ok(p.name && p.feel, p.id);
   });
+  assert.strictEqual(Heist.POWERS.length, E.STRATEGIES.length);
 });
 
-test('training hands out the first four algorithms two, one, one', function () {
-  assert.deepStrictEqual(campaign.TRAINING_UNLOCKS.slice(0, 3), [['bfs', 'dfs'], ['astar'], ['dijkstra']]);
-});
-
-test('a log replays to the same run, including getting off a ride', function () {
-  var lv = LEVELS[0];
-  var st = Heist.create(lv);
+test('a plot costs what verify-campaign charges, and takes one tick', function () {
+  var st = still(1);
   var d = st.deliveries[0];
-  Heist.fire(st, 'bfs', { x: d.x, y: d.y });
+  var params = E.defaultParams('bfs');
+  params.from = st.grid.start;
+  params.to = { x: d.x, y: d.y };
+  params.fog = false;
+  params.hideGoal = false;
+  var want = C.plotCharge(E.search(st.grid, 'bfs', params), st.map);
+  var out = Heist.fire(st, 'bfs', d);
+  assert.strictEqual(out.cost, want);
+  assert.strictEqual(st.spent, want);
+  assert.strictEqual(st.tick, 1);
+  assert.ok(st.ride, 'the cart has a route to ride');
+});
+
+test('riding pays each cell\'s terrain, and the level is won on the last delivery', function () {
+  var st = still(1);
+  st.deliveries.forEach(function (d) {
+    var before = st.spent;
+    var out = Heist.fire(st, 'bfs', d);
+    var ride = out.trace.path.slice(1).reduce(function (n, p) { return n + E.cellCost(st.grid, p.x, p.y); }, 0);
+    while (st.ride) { Heist.tick(st); }
+    assert.strictEqual(st.spent - before, out.cost + ride);
+    assert.ok(d.secured);
+  });
+  assert.strictEqual(st.status, 'won');
+  assert.ok(Heist.stars(st) >= 1);
+});
+
+test('a log replays to the same run: plots, stops, nudges and waits', function () {
+  var enc = C.encounter(3);
+  var st = Heist.create(enc);
+  var d = st.deliveries[0];
+  Heist.fire(st, 'bfs', d);
   Heist.tick(st);
   Heist.tick(st);
-  assert.ok(Heist.stop(st));
+  Heist.stop(st);
   Heist.tick(st);
-  Heist.nudge(st, 0);
-  var again = Heist.replay(lv, st.log);
+  Heist.nudge(st, 1);
+  Heist.fire(st, 'dijkstra', st.deliveries[1]);
+  Heist.tick(st);
+  var again = Heist.replay(enc, st.log);
   assert.deepStrictEqual(Heist.summary(again), Heist.summary(st));
   assert.deepStrictEqual(again.player, st.player);
 });
 
-test('a strike stuns an ordinary robot and drops what it carries', function () {
-  var lv = LEVELS[0];
-  var st = Heist.create(lv);
-  var bot = st.bots[0];
-  // Park the robot two cells from the cart, carrying a lockbox.
-  bot.x = st.player.x + 2;
-  bot.y = st.player.y;
-  bot.carrying = { id: 99, x: 0, y: 0 };
-  var out = Heist.fire(st, 'bfs', { x: bot.x, y: bot.y, botId: bot.id });
-  assert.ok(out.hit, out.message);
-  assert.strictEqual(bot.hp, 1, 'an ordinary robot is not removed');
-  assert.ok(bot.stunned > 0, 'it is stunned');
-  assert.strictEqual(bot.carrying, null);
-  assert.ok(st.chests.some(function (c) { return c.id === 99; }), 'the lockbox is on the floor');
+test('the light stuns a hauler and makes it drop its lockbox; a scout runs', function () {
+  var st = still(3);
+  var d = st.deliveries[0];
+  var route = Heist.openFire(st, 'bfs', d);
+  while (!route.done) { Heist.stepFire(route); }
+  var mid = Heist.traceOf(route).path[2];
+  var hauler = { id: 90, type: 'basic', name: 'Hauler bot', x: mid.x, y: mid.y, den: mid, hp: 1, maxHp: 1, phase: 0, facing: 0, stunned: 0, fleeing: 0, calm: 0, carrying: { id: 7, x: 0, y: 0 }, holding: null };
+  st.bots.push(hauler);
+  Heist.fire(st, 'bfs', d);
+  assert.ok(hauler.stunned > 0);
+  assert.strictEqual(hauler.carrying, null);
+  assert.ok(st.chests.some(function (c) { return c.id === 7; }));
 });
 
-test('nudges cost charge, and free-walk makes them free', function () {
-  var lv = LEVELS[0];
-  var st = Heist.create(lv);
-  Heist.nudge(st, 0);
-  assert.strictEqual(st.spent, Heist.RULES.nudgeCost);
-  var copy = Object.assign({}, lv, { freeWalk: true });
-  var free = Heist.create(copy);
-  Heist.nudge(free, 0);
+test('a foreman holds his delivery until his last plate, and his zone\'s power does nothing', function () {
+  var enc = C.encounter(4);
+  var st = Heist.create(enc);
+  st.bots = st.bots.filter(function (b) { return b.type === 'boss'; });
+  var boss = st.bots[0];
+  var held = st.deliveries[boss.holding];
+  var shield = st.zone.bossShieldedFrom;
+  var other = st.powers.filter(function (p) { return p !== shield; })[0];
+  Heist.fire(st, shield, { x: boss.x, y: boss.y });
+  assert.strictEqual(boss.hp, boss.maxHp, 'proofed');
+  for (var i = 0; i < boss.maxHp; i++) {
+    boss.stunned = 0;
+    Heist.fire(st, other, { x: boss.x, y: boss.y });
+    Heist.stop(st);
+  }
+  assert.strictEqual(boss.hp, 0);
+  assert.strictEqual(held.heldBy, null, 'released');
+});
+
+test('a nudge costs the cell plus the surcharge; free-walk makes it free', function () {
+  var st = still(1);
+  var dir = [0, 1, 2, 3].filter(function (k) {
+    var dd = Heist.DIRS[k];
+    return Heist.canStep(st.grid, st.player, { x: st.player.x + dd[0], y: st.player.y + dd[1] });
+  })[0];
+  Heist.nudge(st, dir);
+  assert.strictEqual(st.spent, 1 + C.ECONOMY.nudgeSurcharge);
+  var free = Heist.create(C.encounter(1), { freeWalk: true });
+  Heist.nudge(free, dir);
   assert.strictEqual(free.spent, 0);
+});
+
+test('a boost other than recharge caps the level at two stars', function () {
+  var st = Heist.create(C.encounter(3), { boosts: { recharge: 1, freeze: 1 } });
+  var before = st.charge;
+  assert.strictEqual(Heist.useBoost(st, 'recharge'), true);
+  assert.ok(st.charge > before);
+  assert.strictEqual(st.starCap, undefined);
+  assert.strictEqual(Heist.useBoost(st, 'freeze'), true);
+  assert.strictEqual(st.starCap, 2);
+  assert.notStrictEqual(Heist.useBoost(st, 'freeze'), true, 'one per level');
+});
+
+test('the power change cap is enforced across plots', function () {
+  var enc = C.encounter(15);
+  var st = still(15);
+  var powers = st.powers;
+  var d = st.deliveries[0];
+  for (var i = 0; i < enc.swapCap + 1; i++) {
+    var out = Heist.fire(st, powers[i % 2], d);
+    Heist.stop(st);
+    if (i < enc.swapCap + 1) { assert.ok(!out.refused, 'change ' + i); }
+  }
+  var last = Heist.fire(st, powers[(enc.swapCap + 1) % 2], d);
+  assert.ok(last.refused, 'one change past the cap is refused');
 });

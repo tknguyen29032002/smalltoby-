@@ -192,10 +192,12 @@ function totalStars() {
 }
 
 // Training hands out the first four algorithms two, then one, then one at a
-// time (TRAINING_UNLOCKS in campaign.js); everything else is out from the
-// level after the last of them. Returns the 0-based level a strategy opens on.
+// time; everything else is out from the level after the last of them.
+var TRAINING_UNLOCKS = [['bfs', 'dfs'], ['astar'], ['dijkstra']];
+
+// Returns the 0-based level a strategy opens on.
 function unlockLevel(id) {
-  var table = (typeof TRAINING_UNLOCKS !== 'undefined') ? TRAINING_UNLOCKS : [];
+  var table = TRAINING_UNLOCKS;
   var last = 0;
   for (var i = 0; i < table.length; i++) {
     if (table[i].indexOf(id) !== -1) { return i; }
