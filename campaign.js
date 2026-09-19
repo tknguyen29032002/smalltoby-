@@ -115,15 +115,15 @@ var Campaign = (function () {
   };
 
   var ZONES = [
-    { key: 'receiving', name: 'Receiving', tier: 1, bossShieldedFrom: null, swapCap: 5, fog: false,
+    { key: 'dock', name: 'The Dock', tier: 1, bossShieldedFrom: null, swapCap: 5, fog: false,
       tightens: 'Nothing yet. Three powers arrive; the floor is lit and there is no foreman.' },
-    { key: 'oil-line', name: 'The Oil Line', tier: 2, bossShieldedFrom: 'astar', swapCap: 5, fog: false,
+    { key: 'assembly', name: 'Assembly', tier: 2, bossShieldedFrom: 'astar', swapCap: 5, fog: false,
       tightens: 'Foremen arrive, proofed against the dart that just became the easy answer.' },
-    { key: 'long-halls', name: 'The Long Halls', tier: 3, bossShieldedFrom: 'wastar', swapCap: 4, fog: false,
+    { key: 'racks', name: 'The Racks', tier: 3, bossShieldedFrom: 'wastar', swapCap: 4, fog: false,
       tightens: 'Memory is rationed and one manifest goes missing. Four swaps.' },
-    { key: 'power-row', name: 'Power Row', tier: 4, bossShieldedFrom: 'beam', swapCap: 4, fog: true,
+    { key: 'chutes', name: 'The Chutes', tier: 4, bossShieldedFrom: 'beam', swapCap: 4, fog: true,
       tightens: 'Power cells, two foremen proofed against the slitlamp, and the lights go out.' },
-    { key: 'vault', name: 'The Vault', tier: 5, bossShieldedFrom: 'dijkstra', swapCap: 3, fog: true,
+    { key: 'control', name: 'Control', tier: 5, bossShieldedFrom: 'dijkstra', swapCap: 3, fog: true,
       tightens: 'No new powers. Three swaps, dark floors, and everything the factory has.' }
   ];
 
@@ -134,7 +134,7 @@ var Campaign = (function () {
    * ------------------------------------------------------------------ */
   var ENCOUNTERS = [
     {
-      level: 1, name: 'Night shift', mapId: 'receiving-1', zone: 'receiving', tier: 1,
+      level: 1, name: 'Loading bay', mapId: 'dock-loading-bay', zone: 'dock', tier: 1,
       unlocks: 'bfs', deliveries: 2, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 1 }],
       chestRules: { every: 12, max: 1, gold: 5, charge: 6 },
@@ -146,25 +146,25 @@ var Campaign = (function () {
         note: 'Sweep to the near delivery, then sweep again from where you stand.',
         legs: [{ power: 'bfs', to: 1 }, { power: 'bfs', to: 0 }]
       },
-      par: { ticks: 38, charge: 67 }, startCharge: 134
+      par: { ticks: 28, charge: 41 }, startCharge: 82
     },
     {
-      level: 2, name: 'The aisles', mapId: 'receiving-2', zone: 'receiving', tier: 1,
-      unlocks: 'dfs', deliveries: 2, fog: false, memoryCap: 8, swapCap: 5,
+      level: 2, name: 'The crate cup', mapId: 'dock-crate-cup', zone: 'dock', tier: 1,
+      unlocks: 'dfs', deliveries: 2, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 2 }],
       chestRules: { every: 12, max: 1, gold: 5, charge: 6 },
       prizeBehaviour: { heldByBoss: [], hidden: false },
       rewards: { clear: 10, twoStar: 5, threeStar: 10 },
       shopUnlocks: ['freeze'],
-      teaches: 'A sweep holds every aisle open at once; a bore holds one. When memory is the limit, that is the whole bill.',
+      teaches: 'A bore commits to one direction and follows it to the end: nearly free to plot, and it promises nothing about the ride.',
       perfectLine: {
-        note: 'The sweep overheats on the comb. The bore walks one aisle at a time, which is all the memory this floor leaves you.',
-        legs: [{ power: 'dfs', to: 0 }, { power: 'dfs', to: 1 }]
+        note: 'Bore both hops. On an open dock the crooked ride costs less than a sweep of the whole floor.',
+        legs: [{ power: 'dfs', to: 1 }, { power: 'dfs', to: 0 }]
       },
-      par: { ticks: 148, charge: 172 }, startCharge: 344
+      par: { ticks: 45, charge: 61 }, startCharge: 122
     },
     {
-      level: 3, name: 'First spill', mapId: 'receiving-3', zone: 'receiving', tier: 1,
+      level: 3, name: 'First spill', mapId: 'dock-oil-apron', zone: 'dock', tier: 1,
       unlocks: 'dijkstra', deliveries: 2, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 3 }, { type: 'fast', count: 1 }],
       chestRules: { every: 12, max: 1, gold: 6, charge: 6 },
@@ -173,13 +173,13 @@ var Campaign = (function () {
       shopUnlocks: [],
       teaches: 'Oil costs five a cell. Counting steps and counting charge stop being the same question.',
       perfectLine: {
-        note: 'The meter is the only power here that walks round the spill instead of through it.',
-        legs: [{ power: 'dijkstra', to: 0 }, { power: 'dijkstra', to: 1 }]
+        note: 'Bore the dry hop along the top; the meter is the only power that walks round the apron spill instead of through it.',
+        legs: [{ power: 'dfs', to: 1 }, { power: 'dijkstra', to: 0 }]
       },
-      par: { ticks: 40, charge: 76 }, startCharge: 152
+      par: { ticks: 46, charge: 52 }, startCharge: 104
     },
     {
-      level: 4, name: 'Foreman on the line', mapId: 'oil-line-1', zone: 'oil-line', tier: 2,
+      level: 4, name: 'Foreman on the line', mapId: 'assembly-line-one', zone: 'assembly', tier: 2,
       unlocks: 'astar', deliveries: 2, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 2 }, { type: 'fast', count: 1 }, { type: 'boss', count: 1, hp: 3 }],
       chestRules: { every: 10, max: 2, gold: 6, charge: 8 },
@@ -188,58 +188,58 @@ var Campaign = (function () {
       shopUnlocks: ['reveal'],
       teaches: 'Both deliveries are in plain sight, so the guess is finally worth something - but the foreman shrugs it off.',
       perfectLine: {
-        note: 'Dart to the free delivery; the foreman is proofed against the dart, so meter him down.',
-        legs: [{ power: 'astar', to: 0 }, { power: 'dijkstra', to: 1, hits: 3 }]
+        note: 'Dart to the free delivery; the foreman is proofed against the dart, so bore him down.',
+        legs: [{ power: 'astar', to: 0 }, { power: 'dfs', to: 1, hits: 3 }]
       },
-      par: { ticks: 45, charge: 137 }, startCharge: 247
+      par: { ticks: 53, charge: 80 }, startCharge: 144
     },
     {
-      level: 5, name: 'Deadline', mapId: 'oil-line-2', zone: 'oil-line', tier: 2,
+      level: 5, name: 'The press trap', mapId: 'assembly-press-trap', zone: 'assembly', tier: 2,
       unlocks: 'greedy', deliveries: 3, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 2 }, { type: 'fast', count: 2 }, { type: 'boss', count: 1, hp: 3 }],
       chestRules: { every: 10, max: 2, gold: 6, charge: 8 },
       prizeBehaviour: { heldByBoss: [2], hidden: false },
       rewards: { clear: 15, twoStar: 8, threeStar: 12 },
       shopUnlocks: [],
-      teaches: 'Three deliveries and the floor is moving: a snap that plots for nothing beats a perfect line that arrives late.',
+      teaches: 'Three deliveries and a flooded press: the snap is cheap to plot, and a foreman does not care how elegant the hit was.',
       perfectLine: {
-        note: 'Snap at the open deliveries, snap the foreman down - nothing on this floor punishes the guess.',
-        legs: [{ power: 'greedy', to: 1 }, { power: 'greedy', to: 0 }, { power: 'greedy', to: 2, hits: 3 }]
+        note: 'Dart round the press, snap the foreman down where the guess is honest, dart home.',
+        legs: [{ power: 'astar', to: 1 }, { power: 'greedy', to: 2, hits: 3 }, { power: 'astar', to: 0 }]
       },
-      par: { ticks: 51, charge: 53 }, startCharge: 96
+      par: { ticks: 69, charge: 72 }, startCharge: 130
     },
     {
-      level: 6, name: 'The dial', mapId: 'oil-line-3', zone: 'oil-line', tier: 2,
+      level: 6, name: 'The dial', mapId: 'assembly-narrow-gantry', zone: 'assembly', tier: 2,
       unlocks: 'wastar', deliveries: 3, fog: false, memoryCap: null, swapCap: 5,
       bots: [{ type: 'basic', count: 3 }, { type: 'fast', count: 2 }, { type: 'boss', count: 1, hp: 3 }],
       chestRules: { every: 10, max: 2, gold: 6, charge: 8 },
       prizeBehaviour: { heldByBoss: [2], hidden: false },
       rewards: { clear: 15, twoStar: 8, threeStar: 12 },
       shopUnlocks: ['extra-swap'],
-      teaches: 'One dial runs from the meter to the snap. The deep spill decides how much wrong you can afford.',
+      teaches: 'One dial runs from the meter to the snap. The gantry\'s spills decide how much wrong you can afford.',
       perfectLine: {
-        note: 'Dial at 2 is cheap enough to plot and honest enough to walk round the spill the snap wades into.',
-        legs: [{ power: 'wastar', to: 0 }, { power: 'wastar', to: 1 }, { power: 'wastar', to: 2, hits: 3 }]
+        note: 'Dart, snap the foreman, and dial the last long hop: weight 2 plots for a fraction and still walks round the oil.',
+        legs: [{ power: 'astar', to: 1 }, { power: 'greedy', to: 2, hits: 3 }, { power: 'wastar', to: 0 }]
       },
-      par: { ticks: 46, charge: 52 }, startCharge: 94
+      par: { ticks: 95, charge: 128 }, startCharge: 231
     },
     {
-      level: 7, name: 'The long hall', mapId: 'long-halls-1', zone: 'long-halls', tier: 3,
+      level: 7, name: 'The shelf comb', mapId: 'racks-shelf-comb', zone: 'racks', tier: 3,
       unlocks: 'bibfs', deliveries: 3, fog: false, memoryCap: 24, swapCap: 4,
       bots: [{ type: 'basic', count: 3 }, { type: 'fast', count: 2 }, { type: 'boss', count: 1, hp: 3 }],
       chestRules: { every: 9, max: 2, gold: 7, charge: 8 },
       prizeBehaviour: { heldByBoss: [2], hidden: false },
       rewards: { clear: 20, twoStar: 10, threeStar: 15 },
       shopUnlocks: [],
-      teaches: 'Both ends are known and the hall between them is long: two small searches cost less than one big one.',
+      teaches: 'Both ends are known and the aisle between them is long: two small searches cost less than one big one.',
       perfectLine: {
-        note: 'The pincer walks every hall. It is the cheapest power on the floor that the foreman is not proofed against.',
-        legs: [{ power: 'bibfs', to: 0 }, { power: 'bibfs', to: 1 }, { power: 'bibfs', to: 2, hits: 3 }]
+        note: 'Snap to the first delivery, pincer down the long aisle, bore the foreman out of his bay.',
+        legs: [{ power: 'greedy', to: 0 }, { power: 'bibfs', to: 1 }, { power: 'dfs', to: 2, hits: 3 }]
       },
-      par: { ticks: 82, charge: 112 }, startCharge: 180
+      par: { ticks: 122, charge: 150 }, startCharge: 240
     },
     {
-      level: 8, name: 'Unlisted', mapId: 'long-halls-2', zone: 'long-halls', tier: 3,
+      level: 8, name: 'Unlisted', mapId: 'racks-dark-aisles', zone: 'racks', tier: 3,
       unlocks: 'iddfs', deliveries: 3, fog: false, memoryCap: 10, swapCap: 4,
       bots: [{ type: 'basic', count: 4 }, { type: 'fast', count: 2 }, { type: 'boss', count: 1, hp: 3 }],
       chestRules: { every: 9, max: 2, gold: 7, charge: 8 },
@@ -248,28 +248,28 @@ var Campaign = (function () {
       shopUnlocks: [],
       teaches: 'Nobody logged where the deliveries went, and memory is short. The sonar answers shortest on a stack-sized memory.',
       perfectLine: {
-        note: 'Sonar for the first delivery while the manifest is missing and nothing else fits the memory; once the floor is known, bore the foreman and sweep home.',
-        legs: [{ power: 'iddfs', to: 1 }, { power: 'dfs', to: 2, hits: 3 }, { power: 'bfs', to: 0 }]
+        note: 'Sonar for the first delivery while the manifest is missing and nothing else fits the memory; once the floor is known, the pincer does the rest.',
+        legs: [{ power: 'iddfs', to: 1 }, { power: 'bibfs', to: 0 }, { power: 'bibfs', to: 2, hits: 3 }]
       },
-      par: { ticks: 78, charge: 134 }, startCharge: 215
+      par: { ticks: 212, charge: 863 }, startCharge: 1381
     },
     {
-      level: 9, name: 'Wide floor', mapId: 'long-halls-3', zone: 'long-halls', tier: 3,
-      unlocks: 'beam', deliveries: 3, fog: false, memoryCap: 12, swapCap: 4,
+      level: 9, name: 'Hand on the rack', mapId: 'racks-hand-on-rack', zone: 'racks', tier: 3,
+      unlocks: 'beam', deliveries: 3, fog: false, memoryCap: 4, swapCap: 4,
       bots: [{ type: 'basic', count: 4 }, { type: 'fast', count: 4 }, { type: 'boss', count: 1, hp: 3 }],
       chestRules: { every: 9, max: 2, gold: 7, charge: 8 },
       prizeBehaviour: { heldByBoss: [2], hidden: false },
       rewards: { clear: 20, twoStar: 10, threeStar: 15 },
       shopUnlocks: [],
-      teaches: 'The widest floor in the factory and a small memory. Cap the light at a few cells and it still crosses.',
+      teaches: 'A memory of four cells, and a rack maze. Cap the light at a few leads and it still gets through.',
       perfectLine: {
-        note: 'Slitlamp across the open floor; there is no corridor narrow enough to punish the cap.',
-        legs: [{ power: 'beam', to: 1 }, { power: 'beam', to: 0 }, { power: 'beam', to: 2, hits: 3 }]
+        note: 'Sweep the short hop, dart the next, and take the foreman with the slitlamp - the dart is what he is proofed against.',
+        legs: [{ power: 'bfs', to: 1 }, { power: 'astar', to: 0 }, { power: 'beam', to: 2, hits: 3 }]
       },
-      par: { ticks: 65, charge: 74 }, startCharge: 119
+      par: { ticks: 257, charge: 335 }, startCharge: 536
     },
     {
-      level: 10, name: 'Power row', mapId: 'power-row-1', zone: 'power-row', tier: 4,
+      level: 10, name: 'Power cells', mapId: 'chutes-power-cells', zone: 'chutes', tier: 4,
       unlocks: 'bellman', deliveries: 3, fog: true, memoryCap: null, swapCap: 4,
       bots: [{ type: 'basic', count: 4 }, { type: 'fast', count: 4 }, { type: 'boss', count: 1, hp: 4 }],
       chestRules: { every: 8, max: 2, gold: 8, charge: 10 },
@@ -278,85 +278,85 @@ var Campaign = (function () {
       shopUnlocks: [],
       teaches: 'A power cell pays charge back, so a route can get cheaper after it looked finished. Only the relay keeps asking.',
       perfectLine: {
-        note: 'Relay down the cell stack where the refund beats the extra passes, then meter the foreman: he is proofed against the slitlamp.',
-        legs: [{ power: 'bellman', to: 1 }, { power: 'bellman', to: 0 }, { power: 'dijkstra', to: 2, hits: 4 }]
+        note: 'Relay down the cell stack where the refund beats the extra passes, then bore both short hops.',
+        legs: [{ power: 'bellman', to: 0 }, { power: 'dfs', to: 2, hits: 4 }, { power: 'dfs', to: 1 }]
       },
-      par: { ticks: 68, charge: 219 }, startCharge: 329
+      par: { ticks: 147, charge: 191 }, startCharge: 287
     },
     {
-      level: 11, name: 'Lockbox floor', mapId: 'power-row-2', zone: 'power-row', tier: 4,
-      unlocks: 'flow', deliveries: 3, fog: false, memoryCap: null, swapCap: 4,
+      level: 11, name: 'Crossed chutes', mapId: 'chutes-crossed', zone: 'chutes', tier: 4,
+      unlocks: 'flow', deliveries: 3, fog: false, memoryCap: 16, swapCap: 4,
       bots: [{ type: 'basic', count: 5 }, { type: 'fast', count: 4 }, { type: 'boss', count: 2, hp: 4 }],
       chestRules: { every: 6, max: 4, gold: 8, charge: 10 },
       prizeBehaviour: { heldByBoss: [1, 2], hidden: false },
       rewards: { clear: 25, twoStar: 12, threeStar: 18 },
       shopUnlocks: [],
-      teaches: 'Lockboxes everywhere and one floor. A field built backwards from a target answers every cell at once.',
+      teaches: 'Two foremen and a memory of sixteen. A field built backwards from a target answers the last hop at once.',
       perfectLine: {
-        note: 'Field the free delivery, then keep the field up for both foremen.',
-        legs: [{ power: 'flow', to: 0 }, { power: 'flow', to: 1, hits: 4 }, { power: 'flow', to: 2, hits: 4 }]
+        note: 'Meter the free delivery, snap the near foreman, and field the far one.',
+        legs: [{ power: 'dijkstra', to: 0 }, { power: 'greedy', to: 1, hits: 4 }, { power: 'flow', to: 2, hits: 4 }]
       },
-      par: { ticks: 97, charge: 275 }, startCharge: 413
+      par: { ticks: 110, charge: 290 }, startCharge: 435
     },
     {
-      level: 12, name: 'The racks', mapId: 'power-row-3', zone: 'power-row', tier: 4,
-      unlocks: 'wall', deliveries: 3, fog: true, memoryCap: 4, swapCap: 4,
+      level: 12, name: 'The drop shaft', mapId: 'chutes-drop-shaft', zone: 'chutes', tier: 4,
+      unlocks: 'wall', deliveries: 3, fog: true, memoryCap: null, swapCap: 4,
       bots: [{ type: 'basic', count: 5 }, { type: 'fast', count: 4 }, { type: 'boss', count: 2, hp: 4 }],
       chestRules: { every: 8, max: 2, gold: 8, charge: 10 },
       prizeBehaviour: { heldByBoss: [1, 2], hidden: false },
       rewards: { clear: 25, twoStar: 12, threeStar: 18 },
       shopUnlocks: [],
-      teaches: 'Every wall in the racks is joined up, and the dark costs you nothing if you never let go of one.',
+      teaches: 'A hand on the wall holds no frontier at all, and in a joined-up shaft it gets there for almost nothing.',
       perfectLine: {
-        note: 'Sweep the short hops that fit in four cells of memory; for the far corner of the racks, a hand on the wall holds no frontier at all.',
-        legs: [{ power: 'bfs', to: 1, hits: 4 }, { power: 'bfs', to: 0 }, { power: 'wall', to: 2, hits: 4 }]
+        note: 'Wall-follow to the first delivery, then dart and bore the two foremen.',
+        legs: [{ power: 'wall', to: 0 }, { power: 'astar', to: 1, hits: 4 }, { power: 'dfs', to: 2, hits: 4 }]
       },
-      par: { ticks: 112, charge: 138 }, startCharge: 207
+      par: { ticks: 207, charge: 410 }, startCharge: 615
     },
     {
-      level: 13, name: 'Vault approach', mapId: 'vault-1', zone: 'vault', tier: 5,
+      level: 13, name: 'Sorting floor', mapId: 'control-sorting-floor', zone: 'control', tier: 5,
       unlocks: null, deliveries: 3, fog: true, memoryCap: null, swapCap: 3,
       bots: [{ type: 'basic', count: 5 }, { type: 'fast', count: 4 }, { type: 'boss', count: 2, hp: 5 }],
       chestRules: { every: 8, max: 3, gold: 9, charge: 10 },
       prizeBehaviour: { heldByBoss: [1, 2], hidden: false },
       rewards: { clear: 30, twoStar: 15, threeStar: 20 },
       shopUnlocks: [],
-      teaches: 'The chutes make the ruler lie, and the dark means you find that out late. Three swaps to fix it.',
+      teaches: 'Two foremen at opposite ends of a maze of sorting lanes. No single power is right twice here.',
       perfectLine: {
-        note: 'Slitlamp the free delivery while the floor is dark, bore the short hop to the near foreman, slitlamp the far one.',
-        legs: [{ power: 'beam', to: 0 }, { power: 'dfs', to: 2, hits: 5 }, { power: 'beam', to: 1, hits: 5 }]
+        note: 'Pincer to the free delivery, bore the near foreman, and walk a wall to the far one.',
+        legs: [{ power: 'bibfs', to: 0 }, { power: 'dfs', to: 2, hits: 5 }, { power: 'wall', to: 1, hits: 5 }]
       },
-      par: { ticks: 82, charge: 145 }, startCharge: 203
+      par: { ticks: 225, charge: 338 }, startCharge: 474
     },
     {
-      level: 14, name: 'Everything at once', mapId: 'vault-2', zone: 'vault', tier: 5,
+      level: 14, name: 'Fleet recall', mapId: 'control-fleet-recall', zone: 'control', tier: 5,
       unlocks: null, deliveries: 3, fog: true, memoryCap: null, swapCap: 3,
       bots: [{ type: 'basic', count: 6 }, { type: 'fast', count: 4 }, { type: 'boss', count: 2, hp: 5 }],
       chestRules: { every: 7, max: 3, gold: 9, charge: 10 },
       prizeBehaviour: { heldByBoss: [1, 2], hidden: false },
       rewards: { clear: 30, twoStar: 15, threeStar: 20 },
       shopUnlocks: [],
-      teaches: 'Oil, a power cell, racks and a chute on one floor. No single power is right for every leg of it.',
+      teaches: 'Four starting bays and three deliveries: the pincer and the slitlamp split the floor between them.',
       perfectLine: {
-        note: 'Dart the near foreman, let the rail carry you through the racks to the free delivery, bore the last hop.',
-        legs: [{ power: 'astar', to: 1, hits: 5 }, { power: 'wall', to: 0 }, { power: 'dfs', to: 2, hits: 5 }]
+        note: 'Pincer the first foreman, slitlamp the second, and slitlamp home.',
+        legs: [{ power: 'bibfs', to: 1, hits: 5 }, { power: 'beam', to: 2, hits: 5 }, { power: 'beam', to: 0 }]
       },
-      par: { ticks: 68, charge: 99 }, startCharge: 139
+      par: { ticks: 130, charge: 307 }, startCharge: 430
     },
     {
-      level: 15, name: 'The strongroom', mapId: 'vault-3', zone: 'vault', tier: 5,
+      level: 15, name: 'The strongroom', mapId: 'control-the-vault', zone: 'control', tier: 5,
       unlocks: null, deliveries: 3, fog: true, memoryCap: null, swapCap: 3,
       bots: [{ type: 'basic', count: 6 }, { type: 'fast', count: 4 }, { type: 'boss', count: 3, hp: 5 }],
       chestRules: { every: 7, max: 3, gold: 10, charge: 10 },
       prizeBehaviour: { heldByBoss: [0, 1, 2], hidden: true },
       rewards: { clear: 40, twoStar: 20, threeStar: 30 },
       shopUnlocks: [],
-      teaches: 'Three foremen, three deliveries, and nothing on the manifest. Everything the factory taught you, in one shift.',
+      teaches: 'Three foremen, three deliveries, fog, chutes and a charging shaft. Everything the factory taught you, in one shift.',
       perfectLine: {
-        note: 'Blind dart to the first foreman, bore the short hop, and the pincer for the long haul home.',
-        legs: [{ power: 'astar', to: 1, hits: 5 }, { power: 'dfs', to: 2, hits: 5 }, { power: 'bibfs', to: 0, hits: 5 }]
+        note: 'Slitlamp the first two foremen, and bore the last one.',
+        legs: [{ power: 'beam', to: 1, hits: 5 }, { power: 'beam', to: 2, hits: 5 }, { power: 'dfs', to: 0, hits: 5 }]
       },
-      par: { ticks: 81, charge: 151 }, startCharge: 212
+      par: { ticks: 103, charge: 236 }, startCharge: 331
     }
   ];
 

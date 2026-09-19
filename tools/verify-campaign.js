@@ -338,12 +338,12 @@ if (require.main === module) {
     process.exit(0);
   }
   console.log('');
-  console.log(pad('lvl', 4) + pad('map', 14) + pad('unlocks', 9) + pad('bots b/f/B', 11) + pad('diff', 5) +
+  console.log(pad('lvl', 4) + pad('map', 24) + pad('unlocks', 9) + pad('bots b/f/B', 11) + pad('diff', 5) +
     pad('line', 26) + pad('measured', 10) + pad('par', 10) + pad('start', 6) + 'three stars solo');
   result.rows.forEach(function (r) {
     var e = r.enc;
     var n = function (t) { return e.bots.filter(function (b) { return b.type === t; }).reduce(function (s, b) { return s + b.count; }, 0); };
-    console.log(pad(e.level, 4) + pad(e.mapId, 14) + pad(e.unlocks || '-', 9) +
+    console.log(pad(e.level, 4) + pad(e.mapId, 24) + pad(e.unlocks || '-', 9) +
       pad(n('basic') + '/' + n('fast') + '/' + n('boss'), 11) + pad(C.difficultyOf(e), 5) +
       pad(e.perfectLine.legs.map(function (l) { return l.power; }).join(','), 26) +
       pad(r.m.ticks + 't/' + r.m.charge + 'c', 10) + pad(e.par.ticks + 't/' + e.par.charge + 'c', 10) +
