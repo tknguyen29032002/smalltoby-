@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Factory Heist - art concept</title>
+<!-- inline favicon: keeps the console free of a 404 over http://, same trick as index.html -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2310141b'/%3E%3Cpath d='M8 3 L14 6 L8 9 L2 6 Z' fill='%235c6877'/%3E%3Cpath d='M2 6 L8 9 L8 13 L2 10 Z' fill='%2339434f'/%3E%3Cpath d='M14 6 L14 10 L8 13 L8 9 Z' fill='%23222936'/%3E%3Ccircle cx='8' cy='6' r='1.6' fill='%23ffc21f'/%3E%3C/svg%3E" />
+<!--
+  Double-click this file. It runs from file:// with no server, no CDN, no
+  modules and no images: every pixel on this page is drawn by ../../sprites.js,
+  which is the same file the game would ship.
+
+  The art bible is ART.md, next to this file.
+-->
+<style>
+  :root {
+    --bg: #0d1017;
+    --ink: #e7ebf3;
+    --dim: #9aa4b8;
+    --faint: #5e6a7e;
+    --line: rgba(160,178,205,0.16);
+    --steel: #8b98a8;
+    --yellow: #ffc21f;
+    --orange: #ff7a29;
+    --prize: #4ff0c5;
+    --hazard: #e0452e;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background:
+      radial-gradient(1100px 620px at 50% -8%, #1b2233 0%, rgba(13,16,23,0) 70%),
+      var(--bg);
+    padding: 40px 28px 90px;
+  }
+  .wrap { max-width: 1160px; margin: 0 auto; }
+
+  header.page { margin-bottom: 34px; }
+  .eyebrow {
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--yellow);
+  }
+  h1 { font-size: 34px; line-height: 1.15; margin: 12px 0 8px; letter-spacing: -0.01em; }
+  h2 {
+    font: 600 12px/1 var(--mono);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin: 0 0 4px;
+  }
+  .lede { color: var(--dim); max-width: 74ch; margin: 0; }
+  section { margin-top: 54px; }
+  section > p.note { color: var(--dim); max-width: 78ch; margin: 8px 0 20px; }
+  .rule { height: 1px; background: var(--line); margin: 14px 0 22px; }
+
+  /* ---------- the screen mock ---------- */
+
+  .screen {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    background: radial-gradient(900px 520px at 50% 40%, #1b2233 0%, #0b0e14 74%);
+    box-shadow: 0 30px 70px rgba(0,0,0,0.5), inset 0 0 0 1px var(--line);
+    aspect-ratio: 16 / 9;
+  }
+  .screen canvas { display: block; width: 100%; height: 100%; }
+  .hud { position: absolute; inset: 0; pointer-events: none; }
+  .hud-top, .hud-bottom { position: absolute; left: 0; right: 0; display: flex; padding: 20px 24px; }
+  .hud-top { top: 0; justify-content: space-between; align-items: flex-start;
+    background: linear-gradient(rgba(9,11,16,0.72), rgba(9,11,16,0)); }
+  .hud-bottom { bottom: 0; align-items: flex-end; justify-content: space-between; gap: 18px;
+    background: linear-gradient(rgba(9,11,16,0), rgba(9,11,16,0.78)); }
+  .chapter { font: 600 10px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--yellow); }
+  .mission h3 { margin: 7px 0 3px; font-size: 20px; font-weight: 650; }
+  .mission p { margin: 0; color: var(--dim); font-size: 13px; }
+  .readouts { text-align: right; min-width: 232px; }
+  .budget { margin-bottom: 9px; }
+  .budget .row { display: flex; justify-content: space-between; gap: 14px;
+    font: 500 11px/1.4 var(--mono); letter-spacing: 0.06em; color: var(--dim); }
+  .budget .row b { color: var(--ink); font-weight: 600; }
+  .bar { height: 3px; margin-top: 4px; border-radius: 2px; background: rgba(160,178,205,0.18); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 2px; }
+  .cards { display: flex; gap: 8px; }
+  .card {
+    min-width: 84px; padding: 8px 10px 9px; border-radius: 9px;
+    background: rgba(18,23,33,0.72); border: 1px solid var(--line);
+    backdrop-filter: blur(3px);
+  }
+  .card .k { font: 600 10px/1 var(--mono); color: var(--faint); }
+  .card .n { font-size: 13px; font-weight: 620; margin-top: 5px; }
+  .card .u { font: 500 10px/1 var(--mono); color: var(--dim); margin-top: 5px; }
+  .card.live { border-color: rgba(255,194,31,0.55); background: rgba(48,38,12,0.72); }
+  .card.live .k, .card.live .u { color: var(--yellow); }
+  .card.spent { opacity: 0.4; }
+  .hint { font: 500 10px/1.5 var(--mono); color: var(--faint); letter-spacing: 0.04em; text-align: right; }
+  .rotctl { pointer-events: auto; display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-bottom: 8px; }
+  .rotctl button {
+    font: 600 12px/1 var(--mono); color: var(--ink); background: rgba(18,23,33,0.8);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px; cursor: pointer;
+  }
+  .rotctl button:hover { border-color: rgba(255,194,31,0.5); color: var(--yellow); }
+  .rotctl span { font: 600 10px/1 var(--mono); letter-spacing: 0.12em; color: var(--dim); }
+
+  /* ---------- grids ---------- */
+
+  .quad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .quad figure { margin: 0; }
+  .quad .pad { background: #11151d; border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+  .quad canvas { display: block; width: 100%; height: auto; }
+  figcaption { font: 600 10px/1.4 var(--mono); letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--dim); margin-top: 8px; }
+
+  .kit { display: grid; grid-template-columns: repeat(auto-fill, minmax(258px, 1fr)); gap: 16px; }
+  .tile { background: #11151d; border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px 15px; }
+  .tile .name { font: 600 12px/1 var(--mono); color: var(--ink); }
+  .tile .title { font-size: 13px; color: var(--dim); margin-top: 4px; }
+  .tile .strip { display: flex; gap: 4px; margin: 11px 0 9px; }
+  .tile .strip div { flex: 1; background: #0b0e14; border-radius: 7px; position: relative; }
+  .tile .strip canvas { display: block; width: 100%; height: auto; }
+  .tile .strip .r { position: absolute; left: 5px; top: 4px; font: 600 8px/1 var(--mono); color: var(--faint); }
+  .tile .strip .same { display: flex; align-items: center; justify-content: center;
+    font: 600 8px/1.3 var(--mono); color: var(--faint); text-align: center; padding: 6px; }
+  .tile .note { font-size: 12.5px; line-height: 1.5; color: var(--dim); margin: 0; }
+
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
+  .sw { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #11151d; }
+  .sw .chip { height: 42px; }
+  .sw .txt { padding: 8px 10px 10px; }
+  .sw .txt b { font: 600 11px/1 var(--mono); display: block; }
+  .sw .txt span { font: 500 10px/1.5 var(--mono); color: var(--faint); }
+
+  .band { background: #11151d; border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .band canvas { display: block; width: 100%; height: auto; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; }
+  .legend div { display: flex; align-items: center; gap: 8px; font: 500 11px/1 var(--mono); color: var(--dim); }
+  .legend i { width: 11px; height: 11px; border-radius: 3px; display: block; }
+
+  .sil { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+  .sil figure { margin: 0; background: #c3ccd8; border-radius: 9px; padding: 6px 4px 4px; text-align: center; }
+  .sil canvas { display: block; width: 100%; height: auto; }
+  .sil figcaption { color: #47505f; margin-top: 4px; font-size: 8px; letter-spacing: 0.06em; }
+
+  footer { margin-top: 70px; color: var(--faint); font-size: 13px; border-top: 1px solid var(--line); padding-top: 18px; }
+  code { font: 500 12px/1 var(--mono); color: var(--steel); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div class="eyebrow">Factory Heist &middot; art concept</div>
+  <h1>Thieves in the stacks, and a dispatcher with one searchlight.</h1>
+  <p class="lede">
+    Every shape on this page is hand-authored isometric geometry from
+    <code>sprites.js</code>: no images, no CDN, no build. The board turns in
+    90-degree steps, the ceiling lamp does not turn with it, and the search -
+    explored ground, held frontier, committed path - is painted onto the
+    factory floor rather than replacing it.
+  </p>
+</header>
+
+<section>
+  <h2>The screen</h2>
+  <p class="note">
+    One bay of the factory with the HUD mocked over it. The map is the screen:
+    no panel, no boxes down the side, the verdict would arrive over the world.
+    Use the rotate buttons - the art is the same models, turned.
+  </p>
+  <div class="screen">
+    <canvas id="hero"></canvas>
+    <div class="hud">
+      <div class="hud-top">
+        <div class="mission">
+          <div class="chapter">Chapter 1 &middot; Run 3 &middot; Leg 2 of 4</div>
+          <h3>Loading bay</h3>
+          <p>Reach the prize before the haulers do. Cheapest route, and the goal is already lit.</p>
+        </div>
+        <div class="readouts">
+          <div class="budget">
+            <div class="row"><span>Fuel &middot; expansions</span><b>118 / 200</b></div>
+            <div class="bar"><i style="width:59%;background:var(--yellow)"></i></div>
+          </div>
+          <div class="budget">
+            <div class="row"><span>Memory &middot; frontier</span><b>24 / 40</b></div>
+            <div class="bar"><i style="width:60%;background:var(--steel)"></i></div>
+          </div>
+          <div class="budget">
+            <div class="row"><span>Swaps left</span><b>1 / 3</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="hud-bottom">
+        <div class="cards">
+          <div class="card"><div class="k">1 &middot; BFS</div><div class="n">Queue</div><div class="u">4 left</div></div>
+          <div class="card spent"><div class="k">2 &middot; DFS</div><div class="n">Stack</div><div class="u">spent</div></div>
+          <div class="card"><div class="k">3 &middot; DIJK</div><div class="n">Cost so far</div><div class="u">3 left</div></div>
+          <div class="card live"><div class="k">4 &middot; A*</div><div class="n">Cost + guess</div><div class="u">running</div></div>
+          <div class="card"><div class="k">5 &middot; GREEDY</div><div class="n">Guess only</div><div class="u">2 left</div></div>
+        </div>
+        <div>
+          <div class="rotctl">
+            <button id="rot-left" type="button">&#8634;</button>
+            <span id="rot-label">rot 0</span>
+            <button id="rot-right" type="button">&#8635;</button>
+          </div>
+          <div class="hint">space play &middot; &rarr; step &middot; Q E rotate &middot; drag pan &middot; F fit</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>All four rotations</h2>
+  <p class="note">
+    The same bay, turned. Nothing is mirrored and nothing is re-drawn: the
+    models rotate, the lamp stays in the top-left of the screen, so the face
+    that was in the light hands over to its neighbour as the board turns.
+  </p>
+  <div class="quad" id="quad"></div>
+</section>
+
+<section>
+  <h2>Palette</h2>
+  <p class="note">
+    Five colours carry the factory, and three more are reserved as signals.
+    Nothing else reaches the canvas -
+    <code>tests/sprites.test.js</code> fails the build if it does.
+  </p>
+  <div class="swatches" id="swatches"></div>
+</section>
+
+<section>
+  <h2>Search, painted on the floor</h2>
+  <p class="note">
+    Left to right: bare plate, ground the search has taken, the frontier it is
+    still holding, and the route it committed to. The frontier is lifted off
+    the deck and lit safety yellow because it is literally the dispatcher's
+    light; the path rides higher than everything, so no later tile can bury it.
+  </p>
+  <div class="band">
+    <canvas id="overlay-strip"></canvas>
+    <div class="legend">
+      <div><i style="background:#5c6877"></i> plate floor, untouched</div>
+      <div><i style="background:#2f6fb0"></i> explored, cold wash, keeps the terrain underneath</div>
+      <div><i style="background:#ffc21f"></i> frontier, lifted 6px, tethered at the corners</div>
+      <div><i style="background:#ff7a29"></i> path, raised ribbon with chevrons</div>
+      <div><i style="background:#4ff0c5"></i> the prize, and nothing else</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The kit</h2>
+  <p class="note">
+    Every sprite at every rotation that is a different picture. A piece that
+    looks the same from all four sides says so rather than shipping the same
+    drawing four times.
+  </p>
+  <div class="kit" id="kit"></div>
+</section>
+
+<section>
+  <h2>Silhouette test</h2>
+  <p class="note">
+    The same kit as flat black at the size it is actually played at. If two
+    pieces are confusable here they are confusable in the game: the three
+    thieves have to differ in height and width, not in detail.
+  </p>
+  <div class="sil" id="sil"></div>
+</section>
+
+<footer>
+  Drawn by <code>sprites.js</code> &middot; rules in <code>ART.md</code> &middot;
+  SVG sheets in <code>sprites/</code>, regenerated with
+  <code>node tools/render-sprites.js</code>.
+</footer>
+
+</div>
+
+<script src="../../sprites.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var TW = Sprites.TILE_W, TH = Sprites.TILE_H, P = Sprites.PALETTE;
+
+  /* ---------------- the bay ---------------- */
+
+  // .  plate    g  grating    o  oil
+  var FLOOR = [
+    '....g....',
+    '....g....',
+    '....g....',
+    '....g....',
+    '....g....',
+    '....g.oo.',
+    '....g.oo.',
+    '.........',
+    '.........'
+  ];
+  // c crate  k stack  h rack  m machine  p pipe  b barrels  v conveyor
+  // a cabinet  T teleporter  E power cell  Z prize  X chest  x opened chest
+  // D dispatcher  1 scout  2 hauler  3 sneak
+  var PROPS = [
+    'ckh.....Z',
+    '....ppp..',
+    'x.b......',
+    '....vvv..',
+    'm..X....a',
+    '.........',
+    '.3...1...',
+    'T...E..2.',
+    '...D.....'
+  ];
+  var PROP_OF = {
+    c: 'wall_crate', k: 'wall_crate_stack', h: 'wall_shelf_rack', m: 'wall_machine',
+    p: 'wall_pipe_run', b: 'wall_barrels', v: 'wall_conveyor', a: 'wall_cabinet',
+    T: 'teleporter_chute', E: 'power_cell', Z: 'prize', X: 'chest', x: 'chest_open',
+    D: 'player_dispatcher', 1: 'thief_scout', 2: 'thief_hauler', 3: 'thief_sneak'
+  };
+  var FLOOR_OF = { '.': 'floor_plate', g: 'floor_grate', o: 'floor_oil' };
+  // Which way each actor is looking, in grid directions (0 E, 1 S, 2 W, 3 N).
+  var FACING = { D: Sprites.DIR.north, 1: Sprites.DIR.west, 2: Sprites.DIR.north, 3: Sprites.DIR.east };
+
+  // The route the dispatcher committed to, cart to prize.
+  var PATH = [
+    [3, 8], [3, 7], [3, 6], [3, 5], [4, 5], [5, 5], [6, 5], [7, 5],
+    [7, 4], [7, 3], [7, 2], [7, 1], [8, 1]
+  ];
+  // Ground the search has already taken, and the edge it is still holding.
+  var EXPLORED = [
+    [2, 8], [3, 8], [4, 8], [5, 8], [2, 7], [3, 7], [5, 7], [6, 7], [1, 8], [6, 8],
+    [2, 6], [3, 6], [4, 6], [6, 6], [2, 5], [3, 5], [4, 5], [5, 5], [6, 5], [7, 5],
+    [3, 4], [4, 4], [5, 4], [6, 4], [7, 4], [7, 3], [7, 2], [7, 1], [8, 1], [8, 2],
+    [5, 6], [7, 6], [7, 7], [8, 5], [8, 4], [6, 3], [2, 4], [1, 5], [1, 4]
+  ];
+  var FRONTIER = [
+    [8, 0], [8, 3], [6, 2], [5, 2], [1, 3], [0, 5], [0, 6], [1, 7], [8, 6], [8, 7], [4, 2]
+  ];
+
+  function key(x, y) { return x + ',' + y; }
+
+  function toSet(list) {
+    var s = {};
+    list.forEach(function (c) { s[key(c[0], c[1])] = true; });
+    return s;
+  }
+  var EXPLORED_SET = toSet(EXPLORED);
+  var FRONTIER_SET = toSet(FRONTIER);
+  var PATH_SET = toSet(PATH);
+
+  /* ---------------- board rotation ---------------- */
+
+  // One quarter turn of the board: cell (x, y) of a w x h board lands at
+  // (y, w - 1 - x) of an h x w board. Exactly the turn sprites.js applies
+  // inside a tile, so props stay pointing down the same aisle.
+  function rotCell(x, y, w, h, r) {
+    for (var i = 0; i < (r & 3); i++) {
+      var nx = y, ny = w - 1 - x;
+      x = nx; y = ny;
+      var t = w; w = h; h = t;
+    }
+    return { x: x, y: y, w: w, h: h };
+  }
+
+  function worldOf(x, y) { return { x: (x - y) * TW / 2, y: (x + y) * TH / 2 }; }
+
+  function pathShape(x, y) {
+    var dirs = [[1, 0, 0], [0, 1, 1], [-1, 0, 2], [0, -1, 3]];
+    var links = [];
+    dirs.forEach(function (d) {
+      if (PATH_SET[key(x + d[0], y + d[1])]) { links.push(d[2]); }
+    });
+    if (links.length <= 1) {
+      return { name: 'overlay_path_end', local: links.length ? (2 - links[0]) & 3 : 0 };
+    }
+    var a = links[0], b = links[1];
+    if ((a + 2) % 4 === b) {
+      // Straight: authored running east, chevrons point the way of travel.
+      return { name: 'overlay_path_straight', local: (a === 0 || a === 2) ? 0 : 1 };
+    }
+    // Corner: authored entering from the west and leaving to the south.
+    for (var L = 0; L < 4; L++) {
+      var w1 = (2 - L + 4) & 3, w2 = (1 - L + 4) & 3;
+      if ((w1 === a && w2 === b) || (w1 === b && w2 === a)) { return { name: 'overlay_path_corner', local: L }; }
+    }
+    return { name: 'overlay_path_straight', local: 0 };
+  }
+
+  function sizeCanvas(c, cssW, cssH) {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    c.width = Math.round(cssW * dpr);
+    c.height = Math.round(cssH * dpr);
+    if (!c.style.height) { c.style.height = cssH + 'px'; }
+    return { ctx: c.getContext('2d'), dpr: dpr, w: cssW, h: cssH };
+  }
+
+  // Draw the bay. `opts.overlays` turns the search painting on.
+  function drawBay(canvas, rot, cssW, cssH, opts) {
+    opts = opts || {};
+    var s = sizeCanvas(canvas, cssW, cssH);
+    var ctx = s.ctx;
+    var W = FLOOR[0].length, H = FLOOR.length;
+    var span = (W + H) * TW / 2;
+    var scale = Math.min((cssW - 24) / span, (cssH - 40) / ((W + H) * TH / 2 + 46));
+    scale = Math.min(scale, opts.maxScale || 3);
+    var lift = opts.lift || 0;
+
+    ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    ctx.setTransform(s.dpr * scale, 0, 0, s.dpr * scale,
+      s.dpr * cssW / 2, s.dpr * (cssH / 2 - (W + H) * TH / 4 * scale) + s.dpr * (8 - lift));
+
+    var floors = [], props = [];
+    for (var y = 0; y < H; y++) {
+      for (var x = 0; x < W; x++) {
+        var rc = rotCell(x, y, W, H, rot);
+        var at = worldOf(rc.x, rc.y);
+        var depth = rc.x + rc.y;
+        floors.push({ d: depth, x: x, y: y, at: at });
+        props.push({ d: depth, x: x, y: y, at: at });
+      }
+    }
+    floors.sort(function (a, b) { return a.d - b.d; });
+    props.sort(function (a, b) { return a.d - b.d; });
+
+    floors.forEach(function (c) {
+      var f = FLOOR_OF[FLOOR[c.y][c.x]] || 'floor_plate';
+      Sprites.draw(ctx, f, rot, c.at);
+      if (opts.overlays && EXPLORED_SET[key(c.x, c.y)]) {
+        Sprites.draw(ctx, 'overlay_explored', rot, c.at);
+      }
+    });
+
+    props.forEach(function (c) {
+      var ch = PROPS[c.y][c.x];
+      if (opts.overlays && FRONTIER_SET[key(c.x, c.y)] && ch === '.') {
+        Sprites.draw(ctx, 'overlay_frontier', rot, c.at);
+      }
+      if (opts.overlays && PATH_SET[key(c.x, c.y)] && ch !== 'D') {
+        var p = pathShape(c.x, c.y);
+        Sprites.draw(ctx, p.name, (rot + p.local) & 3, c.at);
+      }
+      if (ch === '.') { return; }
+      var name = PROP_OF[ch];
+      if (!name) { return; }
+      var r = FACING[ch] === undefined ? rot : Sprites.face(rot, FACING[ch]);
+      Sprites.draw(ctx, name, r, c.at);
+    });
+  }
+
+  /* ---------------- hero ---------------- */
+
+  var hero = document.getElementById('hero');
+  var heroRot = 0;
+
+  function paintHero() {
+    var box = hero.getBoundingClientRect();
+    drawBay(hero, heroRot, Math.round(box.width), Math.round(box.height),
+      { overlays: true, maxScale: 2.8, lift: 10 });
+    document.getElementById('rot-label').textContent = 'rot ' + heroRot;
+  }
+  document.getElementById('rot-left').addEventListener('click', function () {
+    heroRot = (heroRot + 3) & 3; paintHero();
+  });
+  document.getElementById('rot-right').addEventListener('click', function () {
+    heroRot = (heroRot + 1) & 3; paintHero();
+  });
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'q' || e.key === 'Q') { heroRot = (heroRot + 3) & 3; paintHero(); }
+    if (e.key === 'e' || e.key === 'E') { heroRot = (heroRot + 1) & 3; paintHero(); }
+  });
+
+  /* ---------------- quad ---------------- */
+
+  var quad = document.getElementById('quad');
+  for (var r = 0; r < 4; r++) {
+    var fig = document.createElement('figure');
+    fig.innerHTML = '<div class="pad"><canvas></canvas></div>' +
+      '<figcaption>rotation ' + r + '</figcaption>';
+    quad.appendChild(fig);
+  }
+
+  function paintQuad() {
+    var figs = quad.querySelectorAll('canvas');
+    for (var i = 0; i < figs.length; i++) {
+      var w = Math.round(figs[i].parentNode.getBoundingClientRect().width);
+      var h = Math.round(w * 0.86);
+      figs[i].style.height = h + 'px';
+      drawBay(figs[i], i, w, h, { overlays: true, maxScale: 1.6 });
+    }
+  }
+
+  /* ---------------- palette ---------------- */
+
+  var PALETTE_COPY = [
+    ['oil', 'Oil black', 'outlines, shadow, every gap'],
+    ['steelDeep', 'Steel, deep', 'undersides, tracks, recesses'],
+    ['steelDark', 'Steel, dark', 'bodies in shadow'],
+    ['steel', 'Factory steel', 'the workhorse: plate, crates, chassis'],
+    ['steelLight', 'Steel, light', 'braces, rollers, lit tops'],
+    ['steelPale', 'Steel, pale', 'the catch of light on an edge'],
+    ['yellow', 'Safety yellow', 'the searchlight, the frontier, power'],
+    ['yellowDeep', 'Safety yellow, deep', 'the shaded side of yellow'],
+    ['orange', 'Warning orange', 'the committed path, hot machinery'],
+    ['orangeDeep', 'Warning orange, deep', 'racking, rails, shadowed orange'],
+    ['prize', 'Prize glow', 'the prize. Nothing else, ever.'],
+    ['explored', 'Explored blue', 'ground the search has taken'],
+    ['hazard', 'Thief red', 'thief eyes and hazard chevrons only'],
+    ['glint', 'Glint', 'mixed into tops, never painted flat']
+  ];
+  var sw = document.getElementById('swatches');
+  PALETTE_COPY.forEach(function (row) {
+    var d = document.createElement('div');
+    d.className = 'sw';
+    d.innerHTML = '<div class="chip" style="background:' + P[row[0]] + '"></div>' +
+      '<div class="txt"><b>' + row[1] + '</b><span>' + P[row[0]] + ' &middot; ' + row[2] + '</span></div>';
+    sw.appendChild(d);
+  });
+
+  /* ---------------- overlay strip ---------------- */
+
+  function paintStrip() {
+    var c = document.getElementById('overlay-strip');
+    var cssW = Math.round(c.parentNode.getBoundingClientRect().width - 32);
+    var cssH = 150;
+    c.style.height = cssH + 'px';
+    var s = sizeCanvas(c, cssW, cssH);
+    var ctx = s.ctx;
+    var scale = Math.min(2.6, cssW / 300);
+    ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    ctx.setTransform(s.dpr * scale, 0, 0, s.dpr * scale, s.dpr * 26, s.dpr * 46);
+
+    var run = ['plate', 'explored', 'explored', 'frontier', 'path', 'path', 'prize'];
+    for (var i = 0; i < run.length; i++) {
+      var at = { x: i * TW, y: 0 };  // a straight line of tiles along +x
+      Sprites.draw(ctx, 'floor_plate', 0, at);
+      if (run[i] === 'explored' || run[i] === 'frontier') {
+        Sprites.draw(ctx, 'overlay_explored', 0, at);
+      }
+      if (run[i] === 'frontier') { Sprites.draw(ctx, 'overlay_frontier', 0, at); }
+      if (run[i] === 'path') {
+        Sprites.draw(ctx, 'overlay_explored', 0, at);
+        Sprites.draw(ctx, i === run.length - 2 ? 'overlay_path_end' : 'overlay_path_straight', 0, at);
+      }
+      if (run[i] === 'prize') { Sprites.draw(ctx, 'prize', 0, at); }
+    }
+  }
+
+  /* ---------------- the kit ---------------- */
+
+  var kit = document.getElementById('kit');
+  var GROUP_ORDER = ['floor', 'wall', 'fixture', 'actor', 'thief', 'overlay'];
+  var names = Sprites.names().slice().sort(function (a, b) {
+    var ga = GROUP_ORDER.indexOf(Sprites.meta(a).group);
+    var gb = GROUP_ORDER.indexOf(Sprites.meta(b).group);
+    return ga - gb;
+  });
+
+  names.forEach(function (name) {
+    var meta = Sprites.meta(name);
+    var distinct = Sprites.distinctRotations(name);
+    var map = Sprites.rotationMap(name);
+    var el = document.createElement('div');
+    el.className = 'tile';
+    var strip = '';
+    for (var r = 0; r < 4; r++) {
+      if (distinct.indexOf(r) === -1) {
+        strip += '<div class="same">same<br>as ' + map[r] + '</div>';
+      } else {
+        strip += '<div><canvas data-name="' + name + '" data-rot="' + r + '"></canvas>' +
+          '<span class="r">' + r + '</span></div>';
+      }
+    }
+    el.innerHTML = '<div class="name">' + name + '</div>' +
+      '<div class="title">' + meta.title + '</div>' +
+      '<div class="strip">' + strip + '</div>' +
+      '<p class="note">' + meta.note + '</p>';
+    kit.appendChild(el);
+  });
+
+  // One sprite, centred on its own bounds, over a plate so scale is legible.
+  function paintSpriteCell(canvas) {
+    var name = canvas.getAttribute('data-name');
+    var rot = +canvas.getAttribute('data-rot');
+    var onFloor = Sprites.meta(name).group !== 'floor';
+    var cssW = Math.max(40, Math.round(canvas.parentNode.getBoundingClientRect().width));
+    var cssH = Math.round(cssW * 1.15);
+    canvas.style.height = cssH + 'px';
+    var s = sizeCanvas(canvas, cssW, cssH);
+    var ctx = s.ctx;
+
+    var b = Sprites.bounds(name, rot);
+    if (onFloor) {
+      var fb = Sprites.bounds('floor_plate', rot);
+      b = {
+        x0: Math.min(b.x0, fb.x0), x1: Math.max(b.x1, fb.x1),
+        y0: Math.min(b.y0, fb.y0), y1: Math.max(b.y1, fb.y1)
+      };
+    }
+    var scale = Math.min((cssW - 10) / (b.x1 - b.x0), (cssH - 12) / (b.y1 - b.y0), 2.4);
+    ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    var ox = cssW / 2 - ((b.x0 + b.x1) / 2) * scale;
+    var oy = cssH / 2 - ((b.y0 + b.y1) / 2) * scale;
+    if (onFloor) { Sprites.draw(ctx, 'floor_plate', rot, { x: ox, y: oy, scale: scale }); }
+    Sprites.draw(ctx, name, rot, { x: ox, y: oy, scale: scale });
+  }
+
+  /* ---------------- silhouettes ---------------- */
+
+  var sil = document.getElementById('sil');
+  names.filter(function (n) { return Sprites.meta(n).group !== 'overlay'; }).forEach(function (name) {
+    var fig = document.createElement('figure');
+    fig.innerHTML = '<canvas data-name="' + name + '"></canvas><figcaption>' +
+      name.replace(/^(wall|floor|thief|overlay)_/, '') + '</figcaption>';
+    sil.appendChild(fig);
+  });
+
+  function paintSilhouette(canvas) {
+    var name = canvas.getAttribute('data-name');
+    var cssW = Math.max(40, Math.round(canvas.parentNode.getBoundingClientRect().width - 8));
+    var cssH = 66;
+    canvas.style.height = cssH + 'px';
+    var s = sizeCanvas(canvas, cssW, cssH);
+    var ctx = s.ctx;
+    ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    var b = Sprites.bounds(name, 0);
+    // Played size: one tile is 32 x 16 CSS pixels, so this is 1:1.
+    var ox = cssW / 2;
+    var oy = cssH - 12 - b.y1;
+    Sprites.draw(ctx, name, 0, { x: ox, y: oy, skipGlow: true });
+    // Flatten whatever was drawn into one ink shape.
+    ctx.globalCompositeOperation = 'source-in';
+    ctx.fillStyle = '#20252e';
+    ctx.fillRect(0, 0, cssW, cssH);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ---------------- paint everything ---------------- */
+
+  function paintAll() {
+    paintHero();
+    paintQuad();
+    paintStrip();
+    var cells = kit.querySelectorAll('canvas');
+    for (var i = 0; i < cells.length; i++) { paintSpriteCell(cells[i]); }
+    var sils = sil.querySelectorAll('canvas');
+    for (var j = 0; j < sils.length; j++) { paintSilhouette(sils[j]); }
+  }
+
+  var t = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(t);
+    t = setTimeout(paintAll, 120);
+  });
+  paintAll();
+  window.__artConcept = { sprites: Sprites.names().length, rot: function () { return heroRot; } };
+}());
+</script>
+</body>
+</html>

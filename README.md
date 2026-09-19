@@ -231,4 +231,11 @@ node tools/verify-engine.js   # the registry, the trace fields and the mechanics
 - `search.js` - the engine: the strategy registry, `search()`, the resumable `createSearch`/`stepSearch`/`switchStrategy` loop, and missions. Seven of the twelve strategies are the same loop with a different frontier; the other five have their own shape behind the same trace. See the engine contract above.
 - `render.js` - draws grid, visited-by-order, frontier, and path for a given trace index.
 - `game.js` - level state, button wiring, playback via `requestAnimationFrame`, scoring, compare strip.
-- `tools/` - the two verification scripts. They are the design table, written down and executable.
+- `sprites.js` - the Factory Heist art kit: hand-authored isometric models drawn as flat-shaded canvas polygons, keyed by name and rotation. Not wired into the game yet; it is the art the 2.5D board is being rebuilt around.
+- `tools/` - the two verification scripts, which are the design table written down and executable, plus `render-sprites.js`, which regenerates the art sheets.
+
+## Art
+
+The look Factory Heist is being built towards lives in [`docs/art/ART.md`](docs/art/ART.md) - palette, light direction for a board that rotates in 90-degree steps, silhouette rules at tile size, and the roster.
+Double-click [`docs/art/concept.html`](docs/art/concept.html) to see the whole kit on a rotating factory bay with a mocked HUD; it needs no server and loads nothing remote.
+The SVG sheets in `docs/art/sprites/` are generated from `sprites.js` by `node tools/render-sprites.js`, so never edit them by hand.
