@@ -239,8 +239,9 @@ node tools/verify-engine.js   # the registry, the trace fields and the mechanics
 - `render.js` - isometric board renderer: terrain with height, exploration order, lifted frontier, raised path ribbon, and the camera (`fitCamera`, `drawScene`, `screenToCell`).
 - `game.js` - level state, camera input, playback via `requestAnimationFrame`, scoring, stars in `localStorage`, verdict and compare. The algorithm picker and its glossary cards are built from the strategy registry, so a strategy added in `search.js` appears in the UI with no change here.
 - `sprites.js` - the Factory Heist art kit: hand-authored isometric models drawn as flat-shaded canvas polygons, keyed by name and rotation. Not wired into the game yet; it is the art the 2.5D board is being rebuilt around.
+- `campaign.js`, `shop.js` - Factory Heist's campaign as data: fifteen encounters bound to `maps.js` by id, the thief roster, the zone rules, par, the economy and the shop. Each publishes one global (`Campaign`, `Shop`). The design is `docs/design/CAMPAIGN.md`, and `node tools/verify-campaign.js` proves it (solvable, par reachable, no power sweeps a zone, difficulty rising every level).
 - `tests/` - the node suite (`npm test`) and the browser walkthrough.
-- `tools/` - the two verification scripts, which are the design table written down and executable, plus `render-sprites.js`, which regenerates the art sheets.
+- `tools/` - the verification scripts (`verify-levels.js`, `verify-engine.js`, `verify-campaign.js`), which are the design table written down and executable, plus `render-sprites.js`, which regenerates the art sheets.
 
 ## Art
 
