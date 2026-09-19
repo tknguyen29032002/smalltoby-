@@ -1,31 +1,144 @@
-/* game.js - level state, controls, scoring, compare strip. */
+/* game.js - level state, camera, controls, scoring, verdict overlay.
+ *
+ * The board fills the window and the HUD floats over it. Nothing here knows
+ * how many algorithms exist: the picker, the glossary cards and the compare
+ * strip are all built from the strategy registry, so a strategy added in
+ * search.js appears in the UI on its own.
+ */
 
-var ALGOS = ['bfs', 'dfs', 'dijkstra', 'astar'];
-var ALGO_NAMES = { bfs: 'BFS', dfs: 'DFS', dijkstra: 'Dijkstra', astar: 'A*' };
+/* ---------- strategy registry ---------- */
+
+// search.js owns the registry. Until it exports one, this describes the four
+// strategies the current engine ships with, in the same shape.
+var FALLBACK_STRATEGIES = [
+  {
+    id: 'bfs', name: 'BFS', family: 'blind', frontier: 'queue',
+    tagline: 'first in, first out',
+    guarantee: 'Fewest steps, always - on an unweighted map.',
+    cost: 'Expands every cell at the current distance before going deeper.',
+    goodWhen: 'Steps are what counts and memory is not scarce.',
+    badWhen: 'Terrain has costs, or the map branches and memory is capped.'
+  },
+  {
+    id: 'dfs', name: 'DFS', family: 'blind', frontier: 'stack',
+    tagline: 'last in, first out',
+    guarantee: 'Finds a route if one exists. Says nothing about how good it is.',
+    cost: 'Almost no memory: one corridor at a time.',
+    goodWhen: 'Any route will do and memory is the binding constraint.',
+    badWhen: 'The objective is shortest or cheapest.'
+  },
+  {
+    id: 'dijkstra', name: 'Dijkstra', family: 'weighted', frontier: 'lowest cost so far',
+    tagline: 'cheapest frontier first',
+    guarantee: 'Cheapest route, always - with non-negative costs.',
+    cost: 'Blind to the goal, so it spreads in every direction.',
+    goodWhen: 'Weights matter, or the goal is unknown or plural.',
+    badWhen: 'One known goal on a big map under a tight fuel budget.'
+  },
+  {
+    id: 'astar', name: 'A*', family: 'informed', frontier: 'cost so far + guess',
+    tagline: 'cost + distance to goal',
+    guarantee: 'Cheapest route, as long as the guess never overestimates.',
+    cost: 'Holds the largest frontier of the four: it buys time with memory.',
+    goodWhen: 'One known goal and an honest distance estimate.',
+    badWhen: 'The goal is unknown, the guess lies, or memory is capped.'
+  }
+];
+
+function registry() {
+  var list = (typeof STRATEGIES !== 'undefined' && STRATEGIES && STRATEGIES.length)
+    ? STRATEGIES
+    : FALLBACK_STRATEGIES;
+  return list.map(function (s, i) {
+    var fb = FALLBACK_STRATEGIES[i] || {};
+    return {
+      id: s.id || s.key || fb.id,
+      name: s.name || fb.name || s.id,
+      family: s.family || fb.family || 'search',
+      frontier: s.frontier || fb.frontier || '',
+      tagline: s.tagline || fb.tagline || s.frontier || '',
+      guarantee: s.guarantee || fb.guarantee || '',
+      cost: s.cost || fb.cost || '',
+      goodWhen: s.goodWhen || fb.goodWhen || '',
+      badWhen: s.badWhen || fb.badWhen || '',
+      weightable: s.weightable === true,
+      bidirectional: s.bidirectional === true
+    };
+  });
+}
+
+var STRATS = registry();
+var BY_ID = {};
+STRATS.forEach(function (s) { BY_ID[s.id] = s; });
+function nameOf(id) { return (BY_ID[id] && BY_ID[id].name) || id; }
+
+/* ---------- concepts ---------- */
+
+var CONCEPTS = {
+  optimality: {
+    label: 'Optimality',
+    note: 'An algorithm can be complete (it finds a route) without being optimal (it finds the best one).'
+  },
+  weights: {
+    label: 'Weights',
+    note: 'Counting steps and counting cost are different questions, and they have different answers.'
+  },
+  heuristics: {
+    label: 'Heuristics',
+    note: 'A heuristic is knowledge of where the goal is. It buys expansions, and it costs memory.'
+  },
+  space: {
+    label: 'Space complexity',
+    note: 'The frontier is what a search holds in memory. Time is not the only budget.'
+  },
+  admissibility: {
+    label: 'Admissibility',
+    note: 'A heuristic that overestimates can talk A* out of the best route. Optimality depends on an honest guess.'
+  },
+  bounded: {
+    label: 'Bounded suboptimality',
+    note: 'Weighting the guess trades a known slice of optimality for a large cut in work.'
+  },
+  meeting: {
+    label: 'Meet in the middle',
+    note: 'Two half-depth searches hold far less than one full-depth search.'
+  }
+};
+
+/* ---------- elements ---------- */
 
 var el = {
+  canvas: document.getElementById('map'),
   title: document.getElementById('level-title'),
   progress: document.getElementById('level-progress'),
+  starTotal: document.getElementById('star-total'),
   brief: document.getElementById('level-brief'),
-  canvas: document.getElementById('map'),
   objective: document.getElementById('objective'),
-  expCount: document.getElementById('exp-count'),
-  expLimit: document.getElementById('exp-limit'),
-  expBar: document.getElementById('exp-bar'),
-  frontCount: document.getElementById('front-count'),
-  frontLimit: document.getElementById('front-limit'),
-  frontBar: document.getElementById('front-bar'),
+  budgets: document.getElementById('budgets'),
+  legend: document.getElementById('legend'),
+  algos: document.getElementById('algos'),
+  levelbar: document.getElementById('levelbar'),
+  glossary: document.getElementById('glossary'),
   step: document.getElementById('btn-step'),
   play: document.getElementById('btn-play'),
+  retry: document.getElementById('btn-retry'),
+  retry2: document.getElementById('btn-retry-2'),
+  next: document.getElementById('btn-next'),
   speed: document.getElementById('speed'),
-  verdict: document.getElementById('verdict'),
+  weightBox: document.getElementById('weight-box'),
+  weight: document.getElementById('weight'),
+  weightVal: document.getElementById('weight-val'),
+  overlay: document.getElementById('overlay'),
+  overlayClose: document.getElementById('overlay-close'),
   stars: document.getElementById('stars'),
   verdictText: document.getElementById('verdict-text'),
   verdictWhy: document.getElementById('verdict-why'),
-  compare: document.getElementById('compare'),
+  conceptChip: document.getElementById('concept-chip'),
+  conceptNote: document.getElementById('concept-note'),
+  gateNote: document.getElementById('gate-note'),
   compareGrid: document.getElementById('compare-grid'),
-  retry: document.getElementById('btn-retry'),
-  next: document.getElementById('btn-next')
+  hudTop: document.querySelector('.hud-top'),
+  hudBottom: document.querySelector('.hud-bottom')
 };
 
 var state = {
@@ -38,8 +151,65 @@ var state = {
   index: 0,
   playing: false,
   lastTime: 0,
-  carry: 0
+  carry: 0,
+  weight: 1,
+  cam: createCamera(),
+  earned: loadStars()
 };
+
+/* ---------- persistence ---------- */
+
+function loadStars() {
+  try {
+    var raw = window.localStorage.getItem('pathfinder.stars.v1');
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};   // file:// with storage disabled: play on, just do not persist
+  }
+}
+
+function saveStars() {
+  try {
+    window.localStorage.setItem('pathfinder.stars.v1', JSON.stringify(state.earned));
+  } catch (e) { /* nothing to do: the run still scores on screen */ }
+}
+
+function totalStars() {
+  return Object.keys(state.earned).reduce(function (n, k) { return n + state.earned[k]; }, 0);
+}
+
+function unlocked(i) {
+  return i === 0 || (state.earned[i - 1] || 0) > 0 || (state.earned[i] || 0) > 0;
+}
+
+/* ---------- engine calls ---------- */
+
+// The engine may or may not take options yet; both shapes are supported.
+function runSearch(strategy) {
+  var s = BY_ID[strategy];
+  if (s && s.weightable) {
+    try { return search(state.grid, strategy, { weight: state.weight }); } catch (e) { /* fall through */ }
+  }
+  return search(state.grid, strategy);
+}
+
+function computeTraces() {
+  state.traces = {};
+  STRATS.forEach(function (s) { state.traces[s.id] = runSearch(s.id); });
+  state.refs = {
+    bestSteps: bestOf('pathSteps'),
+    bestCost: bestOf('pathCost')
+  };
+}
+
+function bestOf(field) {
+  var best = Infinity;
+  STRATS.forEach(function (s) {
+    var t = state.traces[s.id];
+    if (t.found && t[field] < best) { best = t[field]; }
+  });
+  return best;
+}
 
 /* ---------- scoring ---------- */
 
@@ -67,10 +237,46 @@ function starsFor(level, trace, refs) {
   return budgetBreaches(level, trace).length === 0 ? 3 : 1;
 }
 
+function starText(stars) { return '★★★☆☆☆'.substr(3 - stars, 3); }
+
+/* ---------- which concept this level teaches ---------- */
+
+function conceptFor(level) {
+  if (level.concept && CONCEPTS[level.concept]) { return CONCEPTS[level.concept]; }
+  if (level.teleports) { return CONCEPTS.admissibility; }
+
+  var b = level.budgets || {};
+  if (b.frontier !== undefined && b.expansions === undefined) { return CONCEPTS.space; }
+
+  if (level.objective === 'cheapest') {
+    // If the blind optimal search cannot afford this map, the level is about
+    // knowing where the goal is. Otherwise it is about cost versus distance.
+    var blind = state.traces.dijkstra;
+    if (blind && b.expansions !== undefined && blind.expansions > b.expansions) {
+      return CONCEPTS.heuristics;
+    }
+    return CONCEPTS.weights;
+  }
+  if (level.objective === 'any') { return CONCEPTS.space; }
+
+  // A step-counting level is about optimality unless nothing can actually get
+  // the answer wrong and the memory budget is what bites.
+  var missable = false;
+  var memoryBites = false;
+  STRATS.forEach(function (s) {
+    var t = state.traces[s.id];
+    if (!t) { return; }
+    if (!objectiveMet(level, t, state.refs)) { missable = true; }
+    if (b.frontier !== undefined && t.peakFrontier > b.frontier) { memoryBites = true; }
+  });
+  if (!missable && memoryBites) { return CONCEPTS.space; }
+  return CONCEPTS.optimality;
+}
+
 /* ---------- the one-sentence why ---------- */
 
 function whySentence(level, algo, trace, refs) {
-  var name = ALGO_NAMES[algo];
+  var name = nameOf(algo);
 
   if (!trace.found) {
     return name + ' ran out of reachable cells without ever touching the goal.';
@@ -117,20 +323,119 @@ function whySentence(level, algo, trace, refs) {
     return name + ' peaked at ' + b.used + ' frontier cells against a budget of ' + b.limit + '.';
   }
 
-  // Three stars: teach by contrast with whichever rival worked hardest.
-  var rival = ALGOS.filter(function (a) { return a !== algo; }).reduce(function (acc, a) {
-    return state.traces[a].expansions > state.traces[acc].expansions ? a : acc;
+  // Three stars: teach by contrast with whichever rival worked hardest for the
+  // SAME answer. A rival that missed the objective did not get the same answer,
+  // so it cannot carry this sentence - on the levels DFS or BFS is designed to
+  // fail, claiming it would have is the opposite of the lesson.
+  var peers = STRATS.map(function (s) { return s.id; }).filter(function (a) {
+    return a !== algo && state.traces[a] && objectiveMet(level, state.traces[a], refs);
   });
-  var rivalTrace = state.traces[rival];
-  if (rivalTrace.expansions > trace.expansions * 1.2) {
-    return 'On this map ' + ALGO_NAMES[rival] + ' would have spent ' + rivalTrace.expansions +
-      ' expansions to get the same answer, and ' + name + ' needed only ' + trace.expansions + '.';
+  if (peers.length > 0) {
+    var rival = peers.reduce(function (acc, a) {
+      return state.traces[a].expansions > state.traces[acc].expansions ? a : acc;
+    });
+    var rivalTrace = state.traces[rival];
+    if (rivalTrace.expansions > trace.expansions * 1.2) {
+      return 'On this map ' + nameOf(rival) + ' would have spent ' + rivalTrace.expansions +
+        ' expansions to get the same answer, and ' + name + ' needed only ' + trace.expansions + '.';
+    }
   }
   if (level.objective === 'any') {
     return 'Reaching the goal was never the hard part here - holding the search in memory was, and ' +
       name + ' peaked at just ' + trace.peakFrontier + ' frontier cells.';
   }
-  return name + ' met the objective well inside the budget on this map.';
+  return name + ' met the objective inside every budget on this map.';
+}
+
+/* ---------- HUD building ---------- */
+
+function buildPicker() {
+  el.algos.innerHTML = '';
+  STRATS.forEach(function (s) {
+    var b = document.createElement('button');
+    b.className = 'algo';
+    b.dataset.algo = s.id;
+    b.innerHTML = '<span>' + s.name + '</span><small>' + s.tagline + '</small>';
+    b.addEventListener('click', function () { choose(s.id); });
+    b.addEventListener('mouseenter', function () { showGlossary(s, b); });
+    b.addEventListener('focus', function () { showGlossary(s, b); });
+    b.addEventListener('mouseleave', hideGlossary);
+    b.addEventListener('blur', hideGlossary);
+    el.algos.appendChild(b);
+  });
+}
+
+function showGlossary(s, anchor) {
+  window.clearTimeout(glossaryTimer);
+  el.glossary.innerHTML =
+    '<div class="fam">' + s.family + ' search</div>' +
+    '<h4>' + s.name + '</h4>' +
+    '<dl>' +
+    '<dt>Frontier</dt><dd>' + s.frontier + '</dd>' +
+    '<dt>Guarantee</dt><dd>' + s.guarantee + '</dd>' +
+    '<dt>Cost</dt><dd>' + s.cost + '</dd>' +
+    '<dt>Good when</dt><dd class="good">' + s.goodWhen + '</dd>' +
+    '<dt>Bad when</dt><dd class="bad">' + s.badWhen + '</dd>' +
+    '</dl>';
+  el.glossary.classList.remove('hidden');
+  var r = anchor.getBoundingClientRect();
+  var gw = el.glossary.offsetWidth;
+  var gh = el.glossary.offsetHeight;
+  var left = Math.max(12, Math.min(window.innerWidth - gw - 12, r.left + r.width / 2 - gw / 2));
+  el.glossary.style.left = left + 'px';
+  el.glossary.style.top = Math.max(12, r.top - gh - 10) + 'px';
+}
+
+function hideGlossary() { el.glossary.classList.add('hidden'); }
+
+function buildLegend() {
+  var items = [
+    ['#e9e4d6', 'grass 1'],
+    ['#7fa070', 'swamp 5'],
+    ['#4a5273', 'wall'],
+    ['#3a61ad', 'explored'],
+    ['#ffc94d', 'frontier'],
+    ['#ff5d73', 'path']
+  ];
+  if (state.level.teleports) { items.push(['#b07cff', 'teleporter']); }
+  el.legend.innerHTML = items.map(function (it) {
+    return '<span><i style="background:' + it[0] + '"></i>' + it[1] + '</span>';
+  }).join('');
+}
+
+function buildBudgets() {
+  var b = state.level.budgets || {};
+  var rows = '';
+  if (b.expansions !== undefined) { rows += budgetRow('exp', 'Fuel (expansions)', b.expansions); }
+  if (b.frontier !== undefined) { rows += budgetRow('front', 'Memory (frontier peak)', b.frontier); }
+  el.budgets.innerHTML = rows;
+}
+
+function budgetRow(key, label, limit) {
+  return '<div class="budget" id="bud-' + key + '">' +
+    '<div class="budget-line"><span>' + label + '</span>' +
+    '<span><b id="' + key + '-count">0</b> / ' + limit + '</span></div>' +
+    '<div class="bar"><div id="' + key + '-bar" class="fill"></div></div></div>';
+}
+
+function buildLevelBar() {
+  el.levelbar.innerHTML = '';
+  LEVELS.forEach(function (lv, i) {
+    var b = document.createElement('button');
+    var open = unlocked(i);
+    b.className = 'lvl' + (i === state.levelIndex ? ' current' : '') + (open ? '' : ' locked');
+    b.innerHTML = '<b>' + (i + 1) + '</b><span class="s">' +
+      (state.earned[i] ? starText(state.earned[i]).replace(/☆/g, '') : '') + '</span>';
+    b.title = open ? lv.name : 'Earn a star on level ' + i + ' to unlock';
+    b.disabled = !open;
+    b.addEventListener('click', function () { if (open) { loadLevel(i); } });
+    el.levelbar.appendChild(b);
+  });
+}
+
+function updateStarTotal() {
+  var max = LEVELS.length * 3;
+  el.starTotal.textContent = '★ ' + totalStars() + ' / ' + max;
 }
 
 /* ---------- level loading ---------- */
@@ -139,37 +444,30 @@ function loadLevel(i) {
   state.levelIndex = i;
   state.level = LEVELS[i];
   state.grid = parseGrid(state.level.map);
-  state.traces = {};
-  ALGOS.forEach(function (a) { state.traces[a] = search(state.grid, a); });
-  state.refs = {
-    bestSteps: state.traces.bfs.pathSteps,
-    bestCost: state.traces.dijkstra.pathCost
-  };
+  computeTraces();
 
-  el.title.textContent = 'Level ' + (i + 1) + ' - ' + state.level.name;
-  el.progress.textContent = (i + 1) + ' / ' + LEVELS.length;
+  el.title.textContent = state.level.name;
+  el.progress.textContent = 'Level ' + (i + 1) + ' of ' + LEVELS.length;
   el.brief.textContent = state.level.brief;
   el.objective.innerHTML = objectiveLine();
-
-  fitMapCanvas();
+  buildBudgets();
+  buildLegend();
+  buildLevelBar();
+  updateStarTotal();
+  hideOverlay();
   resetRun(null);
-  el.next.disabled = true;
-  el.next.textContent = i >= LEVELS.length - 1 ? 'All levels done' : 'Next level';
-  el.retry.disabled = true;
-  setChosenButton(null);
+  resize(true);
 }
 
 function objectiveLine() {
   var o = state.level.objective;
   if (o === 'shortest') {
-    return '<b>Fewest steps.</b> The goal is reachable in ' + state.refs.bestSteps +
-      ' steps - anything longer does not count.';
+    return '<b>Fewest steps.</b> A route that arrives the long way does not count.';
   }
   if (o === 'cheapest') {
-    return '<b>Lowest terrain cost.</b> The cheapest route costs ' + state.refs.bestCost +
-      ' - anything pricier does not count.';
+    return '<b>Lowest terrain cost.</b> Swamp costs five a tile, grass costs one.';
   }
-  return '<b>Just reach the goal.</b> Any route counts. The budget is what will hurt you.';
+  return '<b>Just reach the goal.</b> Any route counts - the budget is what will hurt you.';
 }
 
 function resetRun(algo) {
@@ -180,23 +478,98 @@ function resetRun(algo) {
   el.play.textContent = 'Play';
   el.step.disabled = !algo;
   el.play.disabled = !algo;
-  el.verdict.classList.add('hidden');
-  el.compare.classList.add('hidden');
+  el.retry.disabled = !algo;
+  setActiveButton(algo);
+  updateWeightBox();
   updateBudgets();
   draw();
 }
 
-/* ---------- drawing and budgets ---------- */
+var glossaryTimer = null;
 
-// The map takes the width the board gives it rather than a fixed 600.
-function fitMapCanvas() {
-  var avail = el.canvas.parentNode.clientWidth - 32;
-  fitCanvas(el.canvas, state.grid, Math.max(300, Math.min(avail, 900)), 560);
+function choose(algo) {
+  resetRun(algo);
+  hideOverlay();
+  // Hover does not exist on a touch screen, so picking an algorithm shows its
+  // card for a moment: the player still meets the vocabulary before the run.
+  var btn = el.algos.querySelector('[data-algo="' + algo + '"]');
+  if (btn && BY_ID[algo]) {
+    showGlossary(BY_ID[algo], btn);
+    window.clearTimeout(glossaryTimer);
+    glossaryTimer = window.setTimeout(hideGlossary, 2600);
+  }
+}
+
+function setActiveButton(algo) {
+  Array.prototype.forEach.call(el.algos.children, function (b) {
+    b.classList.toggle('active', b.dataset.algo === algo);
+  });
+}
+
+function updateWeightBox() {
+  var s = state.chosen ? BY_ID[state.chosen] : null;
+  el.weightBox.classList.toggle('hidden', !(s && s.weightable));
+}
+
+/* ---------- camera and drawing ---------- */
+
+// Frame the level inside the band of screen the HUD leaves free. When the
+// verdict sheet is up it takes the bottom of the screen, so the board pulls
+// back into what is left rather than hiding the route behind the card.
+function fitToLevel() {
+  var top = el.hudTop.offsetHeight * 0.72;
+  var bottom = el.hudBottom.offsetHeight * 0.86 + 26;
+  if (!el.overlay.classList.contains('hidden')) {
+    var sheet = el.overlay.querySelector('.sheet');
+    top = el.hudTop.offsetHeight * 0.45;
+    bottom = sheet.offsetHeight + 34;
+  }
+  var h = window.innerHeight - top - bottom;
+  // On a short window the sheet would squeeze the board into a sliver, which
+  // is worse than letting the world run on behind it.
+  if (h < 280) {
+    top = 0;
+    h = window.innerHeight;
+  }
+  fitCamera(state.cam, state.grid, window.innerWidth, h, 26);
+  state.cam.y += top;
+}
+
+function resize(refit) {
+  sizeCanvas(el.canvas, window.innerWidth, window.innerHeight);
+  if (refit) { fitToLevel(); }
+  draw();
+}
+
+function breachIndex() {
+  var b = (state.level.budgets || {}).expansions;
+  return b === undefined ? undefined : b;
+}
+
+function sidesOf(trace, upTo) {
+  // Bidirectional engines may tag each frontier cell with its half.
+  if (!trace || !trace.steps.length) { return null; }
+  var step = trace.steps[Math.max(0, Math.min(upTo, trace.steps.length) - 1)];
+  if (!step || !step.frontierSides) { return null; }
+  var map = {};
+  step.frontierCells.forEach(function (ci, k) { map[ci] = step.frontierSides[k]; });
+  return map;
 }
 
 function draw() {
-  drawFrame(el.canvas, state.grid, state.chosen ? state.traces[state.chosen] : null, state.index, {});
+  var trace = state.chosen ? state.traces[state.chosen] : null;
+  var memLimit = (state.level.budgets || {}).frontier;
+  drawScene(el.canvas, state.grid, trace, state.index, state.cam, {
+    breachAt: breachIndex(),
+    cursor: true,
+    teleports: state.level.teleports,
+    sides: sidesOf(trace, state.index),
+    frontierOver: !!(trace && memLimit !== undefined &&
+      peakFrontierUpTo(trace, state.index) > memLimit)
+  });
 }
+
+/* ---------- budgets ---------- */
 
 function peakFrontierUpTo(trace, index) {
   var peak = 0;
@@ -206,29 +579,30 @@ function peakFrontierUpTo(trace, index) {
   return peak;
 }
 
-function setBar(barEl, countEl, limitEl, used, limit) {
-  var box = barEl.parentNode.parentNode;
-  if (limit === undefined) {
-    box.classList.add('off');
-    limitEl.textContent = 'n/a';
-    countEl.textContent = used;
-    barEl.style.width = '0%';
-    return;
-  }
-  box.classList.remove('off');
-  limitEl.textContent = limit;
-  countEl.textContent = used;
-  barEl.style.width = Math.min(100, (used / limit) * 100) + '%';
-  barEl.classList.toggle('over', used > limit);
+// A budget that does not apply is no longer drawn at all - buildBudgets emits
+// a row only for the budgets a level actually has, and rebuilds them per level
+// - so the stale-red-bar case QA found cannot arise here. The toggles below
+// still clear their own classes on every update.
+function setBar(key, used, limit) {
+  var bar = document.getElementById(key + '-bar');
+  var count = document.getElementById(key + '-count');
+  if (!bar) { return; }
+  count.textContent = used;
+  var ratio = used / limit;
+  bar.style.width = Math.min(100, ratio * 100) + '%';
+  bar.classList.toggle('warn', ratio > 0.75 && ratio <= 1);
+  bar.classList.toggle('over', used > limit);
 }
 
 function updateBudgets() {
-  var b = (state.level.budgets) || {};
+  var b = state.level.budgets || {};
   var trace = state.chosen ? state.traces[state.chosen] : null;
-  var used = trace ? Math.min(state.index, trace.steps.length) : 0;
-  var peak = trace ? peakFrontierUpTo(trace, state.index) : 0;
-  setBar(el.expBar, el.expCount, el.expLimit, used, b.expansions);
-  setBar(el.frontBar, el.frontCount, el.frontLimit, peak, b.frontier);
+  if (b.expansions !== undefined) {
+    setBar('exp', trace ? Math.min(state.index, trace.steps.length) : 0, b.expansions);
+  }
+  if (b.frontier !== undefined) {
+    setBar('front', trace ? peakFrontierUpTo(trace, state.index) : 0, b.frontier);
+  }
 }
 
 /* ---------- playback ---------- */
@@ -251,8 +625,7 @@ function tick(time) {
   if (!state.playing) { return; }
   var dt = state.lastTime ? (time - state.lastTime) / 1000 : 0;
   state.lastTime = time;
-  var perSecond = Number(el.speed.value) * 6;
-  state.carry += dt * perSecond;
+  state.carry += dt * Number(el.speed.value) * 6;
   var n = Math.floor(state.carry);
   if (n > 0) {
     state.carry -= n;
@@ -262,6 +635,7 @@ function tick(time) {
 }
 
 function togglePlay() {
+  if (el.play.disabled) { return; }
   state.playing = !state.playing;
   el.play.textContent = state.playing ? 'Pause' : 'Play';
   if (state.playing) {
@@ -270,36 +644,55 @@ function togglePlay() {
   }
 }
 
-/* ---------- verdict and compare ---------- */
+/* ---------- verdict ---------- */
 
 function finish() {
   var level = state.level;
   var trace = state.traces[state.chosen];
   var stars = starsFor(level, trace, state.refs);
-  var met = objectiveMet(level, trace, state.refs);
 
-  el.stars.textContent = '★★★☆☆☆'.substr(3 - stars, 3);
+  if ((state.earned[state.levelIndex] || 0) < stars) {
+    state.earned[state.levelIndex] = stars;
+    saveStars();
+  }
+  updateStarTotal();
+  buildLevelBar();
+
+  el.stars.textContent = starText(stars);
   el.stars.className = 'stars s' + stars;
 
+  var name = nameOf(state.chosen);
   var headline;
   if (stars === 3) {
-    headline = ALGO_NAMES[state.chosen] + ' was a good fit here.';
+    headline = name + ' was the right call.';
   } else if (stars === 1) {
-    headline = ALGO_NAMES[state.chosen] + ' got the right answer, but blew the budget.';
-  } else if (met) {
-    headline = ALGO_NAMES[state.chosen] + ' failed.';
+    headline = name + ' got the right answer and blew the budget.';
   } else {
-    headline = ALGO_NAMES[state.chosen] + ' missed the objective.';
+    headline = name + ' missed the objective.';
   }
-  el.verdictText.textContent = headline + '  ' + summaryOf(trace);
+  el.verdictText.textContent = headline + ' ' + summaryOf(trace);
   el.verdictWhy.textContent = whySentence(level, state.chosen, trace, state.refs);
-  el.verdict.classList.remove('hidden');
+
+  var concept = conceptFor(level);
+  el.conceptChip.textContent = concept.label;
+  el.conceptNote.textContent = concept.note;
 
   buildCompare();
-  el.compare.classList.remove('hidden');
-  el.verdict.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  el.retry.disabled = false;
-  el.next.disabled = state.levelIndex >= LEVELS.length - 1;
+
+  el.next.textContent = state.levelIndex >= LEVELS.length - 1 ? 'Replay a level' : 'Next level';
+  // The gate is the best result on this level, not the last one: a player who
+  // has already earned a star here and then goes back to watch DFS fail has
+  // not un-earned the next level.
+  el.next.disabled = (state.earned[state.levelIndex] || 0) === 0 &&
+    state.levelIndex < LEVELS.length - 1;
+  el.retry2.className = stars === 3 ? '' : 'primary';
+  el.gateNote.textContent = el.next.disabled
+    ? 'One star on this level opens the next one.'
+    : '';
+  el.overlay.classList.remove('hidden');
+  document.body.classList.add('overlay-open');
+  fitToLevel();
+  draw();
 }
 
 function summaryOf(trace) {
@@ -308,31 +701,43 @@ function summaryOf(trace) {
     ' expansions, peak frontier ' + trace.peakFrontier + '.';
 }
 
+function hideOverlay() {
+  var wasOpen = !el.overlay.classList.contains('hidden');
+  el.overlay.classList.add('hidden');
+  document.body.classList.remove('overlay-open');
+  if (wasOpen && state.grid) { fitToLevel(); draw(); }
+}
+
 function buildCompare() {
   el.compareGrid.innerHTML = '';
-  ALGOS.forEach(function (a) {
-    var trace = state.traces[a];
+  STRATS.forEach(function (s) {
+    var trace = state.traces[s.id];
     var stars = starsFor(state.level, trace, state.refs);
 
     var card = document.createElement('div');
-    card.className = 'cmp' + (a === state.chosen ? ' chosen' : '') + ' s' + stars;
-
-    var head = document.createElement('div');
-    head.className = 'cmp-head';
-    head.innerHTML = '<span>' + ALGO_NAMES[a] + '</span><span class="cmp-stars">' +
-      '★★★☆☆☆'.substr(3 - stars, 3) + '</span>';
-    card.appendChild(head);
+    card.className = 'cmp' + (s.id === state.chosen ? ' chosen' : '') + ' s' + stars;
+    card.innerHTML = '<div class="cmp-head"><span>' + s.name + '</span>' +
+      '<span class="cmp-stars">' + starText(stars) + '</span></div>';
 
     var cv = document.createElement('canvas');
-    fitCanvas(cv, state.grid, 260, 170);
+    var cw = 170;
+    var chh = 112;
+    sizeCanvas(cv, cw, chh);
     card.appendChild(cv);
-    drawFrame(cv, state.grid, trace, trace.steps.length, {});
+
+    var cam = fitCamera(createCamera(), state.grid, cw, chh, 6);
+    // The finished frame shows shape and route only: leftover frontier at the
+    // end of a run tells the player nothing and hides what the search drew.
+    drawScene(cv, state.grid, trace, trace.steps.length, cam, {
+      breachAt: (state.level.budgets || {}).expansions,
+      teleports: state.level.teleports
+    });
 
     var stats = document.createElement('div');
     stats.className = 'cmp-stats';
     stats.innerHTML = trace.found
-      ? ('cost <b>' + trace.pathCost + '</b> · ' + trace.pathSteps + ' steps<br>' +
-        'exp <b>' + trace.expansions + '</b> · frontier <b>' + trace.peakFrontier + '</b>')
+      ? ('cost <b>' + trace.pathCost + '</b> &middot; ' + trace.pathSteps + ' steps<br>' +
+        'fuel <b>' + trace.expansions + '</b> &middot; memory <b>' + trace.peakFrontier + '</b>')
       : 'no path found';
     card.appendChild(stats);
 
@@ -340,41 +745,91 @@ function buildCompare() {
   });
 }
 
-/* ---------- wiring ---------- */
+/* ---------- camera input ---------- */
 
-function setChosenButton(algo) {
-  document.querySelectorAll('.algo').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.algo === algo);
-  });
+var drag = null;
+
+el.canvas.addEventListener('pointerdown', function (e) {
+  drag = { x: e.clientX, y: e.clientY, cx: state.cam.x, cy: state.cam.y, moved: false };
+  el.canvas.classList.add('dragging');
+  el.canvas.setPointerCapture(e.pointerId);
+});
+
+el.canvas.addEventListener('pointermove', function (e) {
+  if (!drag) { return; }
+  state.cam.x = drag.cx + (e.clientX - drag.x);
+  state.cam.y = drag.cy + (e.clientY - drag.y);
+  drag.moved = true;
+  draw();
+});
+
+function endDrag() {
+  drag = null;
+  el.canvas.classList.remove('dragging');
 }
 
-document.querySelectorAll('.algo').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    setChosenButton(btn.dataset.algo);
-    resetRun(btn.dataset.algo);
-    el.retry.disabled = false;
-  });
-});
+el.canvas.addEventListener('pointerup', endDrag);
+el.canvas.addEventListener('pointercancel', endDrag);
+
+el.canvas.addEventListener('wheel', function (e) {
+  e.preventDefault();
+  var factor = Math.exp(-e.deltaY * 0.0016);
+  var next = Math.max(0.3, Math.min(3, state.cam.scale * factor));
+  var k = next / state.cam.scale;
+  // Zoom about the pointer, so the tile under the cursor stays put.
+  state.cam.x = e.clientX - (e.clientX - state.cam.x) * k;
+  state.cam.y = e.clientY - (e.clientY - state.cam.y) * k;
+  state.cam.scale = next;
+  draw();
+}, { passive: false });
+
+el.canvas.addEventListener('dblclick', function () { fitToLevel(); draw(); });
+
+/* ---------- wiring ---------- */
 
 el.step.addEventListener('click', function () {
   if (state.playing) { togglePlay(); }
   stepOnce(1);
 });
 el.play.addEventListener('click', togglePlay);
-el.retry.addEventListener('click', function () { resetRun(state.chosen); });
-el.next.addEventListener('click', function () {
-  if (state.levelIndex < LEVELS.length - 1) { loadLevel(state.levelIndex + 1); }
+el.retry.addEventListener('click', function () { choose(state.chosen); });
+el.retry2.addEventListener('click', function () { choose(state.chosen); });
+el.overlayClose.addEventListener('click', hideOverlay);
+
+el.overlay.addEventListener('click', function (e) {
+  if (e.target === el.overlay) { hideOverlay(); }   // click the map, keep playing
 });
 
-window.addEventListener('resize', function () {
-  if (!state.grid) { return; }
-  fitMapCanvas();
-  draw();
+el.next.addEventListener('click', function () {
+  if (state.levelIndex < LEVELS.length - 1) {
+    loadLevel(state.levelIndex + 1);
+  } else {
+    hideOverlay();
+  }
 });
+
+el.speed.addEventListener('input', function () { el.speed.title = 'Speed ' + el.speed.value; });
+
+el.weight.addEventListener('input', function () {
+  state.weight = Number(el.weight.value) / 10;
+  el.weightVal.textContent = state.weight.toFixed(1);
+  computeTraces();
+  resetRun(state.chosen);
+});
+
+window.addEventListener('resize', function () { resize(true); });
 
 document.addEventListener('keydown', function (e) {
-  if (e.key === ' ' && !el.play.disabled) { e.preventDefault(); togglePlay(); }
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
   if (e.key === 'ArrowRight' && !el.step.disabled) { e.preventDefault(); stepOnce(1); }
+  if (e.key === 'f' || e.key === 'F') { fitToLevel(); draw(); }
+  if (e.key === 'Escape') { hideOverlay(); }
+  if (e.key >= '1' && e.key <= '9') {
+    var s = STRATS[Number(e.key) - 1];
+    if (s) { choose(s.id); }
+  }
 });
 
+buildPicker();
 loadLevel(0);
+window.addEventListener('load', function () { resize(true); });
