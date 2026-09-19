@@ -24,6 +24,7 @@
  *   Heist.hotSwap(state, handle, powerId)     -> bool
  *   Heist.closeFire(state, handle)            -> outcome
  *   Heist.nudge(state, dir)                   -> outcome
+ *   Heist.stop(state)                         -> abandons the current ride
  *   Heist.tick(state)                         -> advances one tick
  *   Heist.stars(state)                        -> 0..3
  *   Heist.replay(level, log)                  -> state
@@ -481,9 +482,12 @@ var Heist = (function () {
 
     outcome.hit = true;
     state.hits++;
-    bot.hp -= 1;
     bot.route = null;
     dropCargo(state, bot);
+    // An ordinary robot is only ever stunned: it gets up and goes back to
+    // work, so a strike buys time rather than clearing the floor. Only a boss
+    // carries plates that a strike can knock off for good.
+    if (bot.maxHp > 1) { bot.hp -= 1; }
     if (bot.hp <= 0) {
       outcome.message = handle.power.name + ' put ' + botName(bot) + ' out of the shift.';
       say(state, 'hit', botName(bot) + ' is down.');
@@ -528,6 +532,18 @@ var Heist = (function () {
     movePlayerTo(state, to.x, to.y);
     advance(state);
     return { moved: true, message: '' };
+  }
+
+  /* ---------------------------------------------------------------- stop ---
+   * Getting off a ride is a decision, so it goes in the log: a replay that
+   * kept riding would land somewhere else. It costs nothing and moves no
+   * clock - the next action is what spends the tick. */
+
+  function stop(state) {
+    if (state.status !== 'playing' || !state.ride) { return false; }
+    state.ride = null;
+    state.log.push(['s']);
+    return true;
   }
 
   /* ---------------------------------------------------------------- tick ---*/
@@ -798,6 +814,8 @@ var Heist = (function () {
         fire(state, a[1], { x: a[2], y: a[3], botId: a[4] }, { swaps: a[5] || [] });
       } else if (a[0] === 'n') {
         nudge(state, a[1]);
+      } else if (a[0] === 's') {
+        stop(state);
       } else {
         tick(state);
       }
@@ -817,6 +835,7 @@ var Heist = (function () {
     hotSwap: hotSwap,
     closeFire: closeFire,
     nudge: nudge,
+    stop: stop,
     tick: tick,
     advance: advance,
     stars: stars,

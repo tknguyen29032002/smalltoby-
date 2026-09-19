@@ -473,3 +473,130 @@ button.primary {
   .brief { display: none; }
   .legend { display: none; }
 }
+
+/* ======================================================================
+ * Factory Heist - index.html. The training page keeps everything above.
+ * ====================================================================== */
+
+#board {
+  position: fixed;
+  inset: 0;
+  display: block;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+#board.dragging { cursor: grabbing; }
+
+.heist .hud a { pointer-events: auto; }
+
+.heist .readouts { min-width: 300px; }
+
+.budget-line .gd { color: var(--ink-dim); font-size: var(--fs-caption); }
+.budget-line.tally { margin-top: 2px; }
+.budget-line .badv { color: #ffb3a6; }
+
+.bar { position: relative; }
+.bar .par {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 9px;
+  background: #fff;
+  opacity: 0.7;
+}
+
+/* legend swatches: the same colours the board lights its key things with */
+.legend .i-you { background: #ffc21f; box-shadow: 0 0 6px #ffc21f; border-radius: 50%; }
+.legend .i-delivery { background: #ff3b30; box-shadow: 0 0 6px #ff3b30; }
+.legend .i-thief { background: #e0452e; transform: rotate(45deg) scale(0.8); }
+.legend .i-route { background: #ff7a29; height: 4px; border-radius: 2px; }
+.legend .i-chest { background: #c98a2e; }
+.legend .i-oil { background: #2a2230; border: 1px solid #5a4a66; }
+.legend .i-cell { background: #4ff0c5; }
+.legend .i-chute { background: #7b8cff; border-radius: 50%; }
+
+/* powers */
+
+.power .pname { display: inline-flex; align-items: center; gap: 7px; }
+.power kbd {
+  font: 600 10px/1 ui-monospace, Menlo, monospace;
+  color: var(--ink-dim);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.power.locked { opacity: 0.32; }
+.power.locked small { color: var(--warn); }
+.power.active { box-shadow: 0 0 0 1px var(--accent), 0 0 14px rgba(107, 143, 214, 0.45); }
+.power.firing { background: #5a3a14; border-color: #ff9a3c; box-shadow: 0 0 14px rgba(255, 154, 60, 0.55); }
+
+.glossary .gdesc { margin: 6px 0 0; color: var(--ink); }
+
+.mode-line {
+  min-width: 0;
+  max-width: 62ch;
+  font-size: var(--fs-meta);
+  color: var(--ink-dim);
+  text-shadow: 0 1px 3px rgba(6, 8, 13, 0.85);
+}
+.mode-line b { color: var(--ink); }
+.mode-line .debug {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 201, 77, 0.18);
+  color: var(--warn);
+  font-size: var(--fs-caption);
+}
+
+.toggle, .link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-caption);
+  color: var(--ink-dim);
+  pointer-events: auto;
+}
+.link { color: #a9c0ee; text-decoration: none; }
+.link:hover { text-decoration: underline; }
+
+.heist .keyhint { margin: 0; }
+.heist .levelbar { flex-wrap: wrap; justify-content: center; }
+
+/* one line of news from the floor, just under the mission */
+.toast {
+  align-self: center;
+  margin-top: -30px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(15, 19, 29, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: var(--fs-meta);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.toast.t-hit, .toast.t-delivery, .toast.t-chest, .toast.t-cell { border-color: rgba(79, 240, 197, 0.6); }
+.toast.t-lost, .toast.t-bump, .toast.t-steal { border-color: rgba(232, 80, 58, 0.7); }
+.toast.t-shove, .toast.t-swap { border-color: rgba(255, 201, 77, 0.6); }
+
+.run-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.cmp.run.ok { box-shadow: inset 0 0 0 1px rgba(39, 174, 114, 0.7); }
+.cmp.run.miss { box-shadow: inset 0 0 0 1px rgba(232, 80, 58, 0.7); }
+
+.heist .hud-bottom { gap: 8px; padding-top: 40px; }
+.powers { max-width: none; gap: 6px; flex-wrap: wrap; }
+.powers .algo { min-width: 0; padding: 6px 11px; }
+.powers .algo.locked { padding: 6px 9px; }
+.powers .algo small { font-size: 11px; }
+.heist .mode-line { margin: 0; min-height: 20px; text-align: center; max-width: none; }
+.heist .transport { gap: 8px; }
+.heist .lvl { width: 28px; padding: 2px 0; }
+.heist .lvl .s { height: 10px; font-size: 8px; }
+.sep { width: 1px; height: 22px; background: rgba(255, 255, 255, 0.12); }
+.powers .algo.locked { padding: 4px 8px; align-self: center; font-size: var(--fs-caption); font-weight: 500; background: rgba(20, 25, 36, 0.85); }
+.powers .algo.locked em { font-style: normal; color: var(--warn); font-size: 10px; }
+.heist .hud-bottom { background: linear-gradient(to top, rgba(9,11,17,0.97) 55%, rgba(9,11,17,0)); }

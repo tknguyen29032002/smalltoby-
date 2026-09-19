@@ -165,7 +165,7 @@ function play(level, levelIndex, opts) {
     while (state.status === 'playing' && state.ride && rideGuard++ < 200) {
       var last = state.ride.path[state.ride.path.length - 1];
       if (!Heist.deliveryAt(state, last.x, last.y) && !anyOpenAt(state, last)) {
-        state.ride = null;
+        Heist.stop(state);
         break;
       }
       Heist.tick(state);

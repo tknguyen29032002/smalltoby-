@@ -1,18 +1,20 @@
-/* tests/browser/walkthrough.js - the page-side half of the browser walkthrough.
+/* tests/browser/walkthrough.js - the browser walkthrough for the Training page.
  *
  * node --test proves search.js and levels.js. It cannot prove the page: that
  * the buttons are wired, that the verdict card says what the trace says, or
  * that the same build behaves the same over file:// and http://. This script
  * does that, by driving the real controls the player uses.
  *
- * It is not a node test - it runs inside the page. Re-run it after touching
- * index.html, game.js or render.js:
+ * The classic campaign lives on training.html now (index.html is Factory
+ * Heist, checked by heist-walkthrough.js). It is not a node test - it runs
+ * inside the page. Re-run it after touching training.html, game.js or
+ * render.js:
  *
  *   python3 -m http.server 8777 &
  *   export CHROME_DEVTOOLS_AXI_SESSION=smalltoby-qa   # own bridge, no clashes
- *   npx -y chrome-devtools-axi open "file://$PWD/index.html"
+ *   npx -y chrome-devtools-axi open "file://$PWD/training.html"
  *   npx -y chrome-devtools-axi eval "$(cat tests/browser/walkthrough.js)"
- *   npx -y chrome-devtools-axi open "http://localhost:8777/index.html"
+ *   npx -y chrome-devtools-axi open "http://localhost:8777/training.html"
  *   npx -y chrome-devtools-axi eval "$(cat tests/browser/walkthrough.js)"
  *
  * `problems` must be empty and the two runs must report the same `digest`;
@@ -64,7 +66,17 @@
 
   for (let lv = 1; lv <= levelCount; lv++) {
     for (const algo of algos) {
-      document.querySelector('.algo[data-algo="' + algo + '"]').click();
+      // Training hands the first four out a level at a time; a locked button
+      // is greyed and disabled, and must stay that way.
+      const btn = document.querySelector('.algo[data-algo="' + algo + '"]');
+      if (btn.disabled) {
+        if (!btn.classList.contains('locked')) { problems.push('L' + lv + ' ' + algo + ': disabled but not shown as locked'); }
+        continue;
+      }
+      if (/^[a-z]+$/.test(btn.querySelector('span').textContent)) {
+        problems.push('L' + lv + ' ' + algo + ': the button shows a raw id');
+      }
+      btn.click();
 
       if ($('btn-step').disabled || $('btn-play').disabled) {
         problems.push('L' + lv + ' ' + algo + ': picking an algorithm left Step/Play disabled');
